@@ -94,7 +94,7 @@ import { CLIENT_DEAL_FIELD, CLIENT_PROFILE_FIELDS, hasClientProfileFields, norma
 import { LEAD_ANALYSIS_CONTRACT_VERSION, bogotaMonthStartIso, monthlyMaxFrom } from '../src/vigia/lead-analysis.js';
 import { AGT003_MODEL_FAILURE, agt003ModelFailureMessage, classifyAgt003ModelFailure } from '../src/vigia/model-failures.js';
 import { buildLeadAnalysisInput, fetchCompanyWebsite, profileHash as leadAnalysisProfileHash, runLeadAnalysis } from '../verticales/comercial/agt003-lead-analysis.js';
-import { bogotaDay, bogotaDayStartIso, decisionQuota, DELETE_PERMISSION, isOutOfActivePipeline, normalizeDecisionRequest, pendingDecisions } from '../src/vigia/opportunity-decision-rules.js';
+import { bogotaDay, bogotaDayStartIso, decisionQuota, DELETE_PERMISSION, isFrozen, isOutOfActivePipeline, normalizeDecisionRequest, pendingDecisions } from '../src/vigia/opportunity-decision-rules.js';
 import { normalizeClientName, typeaheadMatches } from '../verticales/gerencial/siio-sales-clients.js';
 import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
 import { buildAgt003PrioritiesData } from '../verticales/comercial/agt003-priorities-service.js';
@@ -4052,7 +4052,7 @@ function attachVigiaCustomerSegments(rows, segmentRows) {
   });
 }
 
-const VIGIA_COPILOT_OPPORTUNITY_SELECT = 'id,owner_id,owner_name,company_name,stage_name,service_type_name,offer_value,expected_close_date,next_action_at,updated_at';
+const VIGIA_COPILOT_OPPORTUNITY_SELECT = 'id,owner_id,owner_name,company_name,stage_name,service_type_name,offer_value,expected_close_date,next_action_at,updated_at,decision_maker_name,frozen_until';
 const VIGIA_APPROVED_ASSETS_PATH = path.join(__dirname, '..', 'config', 'vigia-approved-assets.v1.json');
 
 async function resolveAgt003OpportunityResource(database, opportunityId, profile) {
@@ -4089,6 +4089,9 @@ async function loadAgt003OpportunityClientNit(database, opportunityId) {
 
 async function loadAgt003OpportunityContext(database, opportunityId, now = () => new Date()) {
   const row = await must(database.from('v_psi_sales_opportunity_enriched').select(VIGIA_COPILOT_OPPORTUNITY_SELECT).eq('id', opportunityId).single());
+  // El cargo no está en la vista. Juan, 2026-11-25: Vig-IA dijo «no hay decisor verificado» de un cliente que tiene
+  // nombre y cargo (Gerente General) en la ficha: no se los pasábamos.
+  const { data: contact } = await database.from('psi_sales_opportunities').select('decision_maker_title').eq('id', opportunityId).maybeSingle();
   const interactions = await must(database.from('psi_sales_interactions')
     .select('id,interaction_type,occurred_at,created_at,notes')
     .eq('opportunity_id', opportunityId)
@@ -4104,6 +4107,9 @@ async function loadAgt003OpportunityContext(database, opportunityId, now = () =>
     offer_value: row.offer_value,
     expected_close_date: row.expected_close_date,
     next_action_date: row.next_action_at,
+    decision_maker: row.decision_maker_name || null,
+    decision_maker_title: contact?.decision_maker_title || null,
+    frozen_until: isFrozen(row, now()) ? row.frozen_until : null,
     preparation_date: agt003PreparationDate(now),
   };
   return {
@@ -5789,8 +5795,18 @@ async function applyChatAction(database, profile, action) {
   }
   if (action.tipo === 'proximo_seguimiento') {
     await ensureOpportunityAccess(database, action.opportunity_id, profile, ACTIONS.CRM_OPPORTUNITY_EDIT);
-    await must(database.from('psi_sales_opportunities').update({ next_action_at: chatDayToIso(action.fecha) }).eq('id', action.opportunity_id).select('id').single());
-    return { opportunity_id: action.opportunity_id };
+    // Agendar un contacto reactiva una oportunidad congelada (Juan, 2026-11-25: «active la oportunidad y
+    // agéndeme una llamada»): congelada no sale en Mi día, y la llamada se perdía. Queda la constancia en la auditoría.
+    const { data: current } = await database.from('psi_sales_opportunities').select('frozen_until').eq('id', action.opportunity_id).maybeSingle();
+    const patch = { next_action_at: chatDayToIso(action.fecha) };
+    const wasFrozen = isFrozen(current);
+    if (wasFrozen) Object.assign(patch, { frozen_until: null, frozen_reason: null, frozen_at: null, frozen_by: null });
+    await must(database.from('psi_sales_opportunities').update(patch).eq('id', action.opportunity_id).select('id').single());
+    if (wasFrozen) {
+      const { error } = await database.from('psi_sales_opportunity_audit_logs').insert({ opportunity_id: action.opportunity_id, changed_by: profile.id, field_name: 'frozen_until', old_value: String(current.frozen_until), new_value: null, notes: 'Reactivada desde el chat de Vig-IA al agendar un contacto' });
+      if (error) console.error('No se pudo registrar la reactivación en la auditoría', error);
+    }
+    return { opportunity_id: action.opportunity_id, ...(wasFrozen ? { reactivated: true } : {}) };
   }
   if (action.tipo === 'actualizar_datos') {
     const current = await loadLeadAnalysisOpportunity(database, action.opportunity_id);
