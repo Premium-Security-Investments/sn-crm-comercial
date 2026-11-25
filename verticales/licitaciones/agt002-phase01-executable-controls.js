@@ -1075,7 +1075,7 @@ function agt002Phase01LinkClaimIsIncomplete(requestedTerms) {
 
 const AGT002_PHASE01_LITERAL_FORWARD_FK = 'psi_sales_opportunities.tender_id';
 const AGT002_PHASE01_APPROVED_LINK_DIRECTION = 'inverse';
-const AGT002_PHASE01_CLOSED_TENDER_OFFER_STATUSES = new Set(['cerrada_no_go', 'adjudicada', 'no_adjudicada']);
+const AGT002_PHASE01_CLOSED_TENDER_OFFER_STATUSES = new Set(['cerrada_no_go', 'no_presentada', 'adjudicada', 'no_adjudicada']);
 const AGT002_PHASE01_EVIDENCE_LOCATOR_SCHEMES = ['repo://', 'migration://', 'fixture://', 'evidence://'];
 const AGT002_PHASE01_LOCAL_EVIDENCE_LOCATOR_SCHEMES = ['repo://', 'migration://', 'fixture://'];
 

@@ -11,6 +11,7 @@ export const OFFER_STATUS_LABEL: Record<TenderOfferStatus, string> = {
   adjudicada: 'Adjudicada',
   no_adjudicada: 'No adjudicada',
   cerrada_no_go: 'NO GO',
+  no_presentada: 'No se presentó',
 };
 
 const MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];

@@ -52,7 +52,7 @@ export async function runFilingFolderPass(database, { processesPath, listFolders
   if (candidates.length) {
     const { data: opportunities } = await database.from('psi_sales_opportunities').select('id,tender_offer_status,stage_code,archive_note,archived_at,discarded_at,lost_at,deleted_at').in('id', candidates);
     const open = (opportunities || []).filter(row => !row.archive_note && !row.archived_at && !row.discarded_at && !row.lost_at && !row.deleted_at
-      && row.stage_code !== 'descartado' && !['cerrada_no_go', 'adjudicada', 'no_adjudicada'].includes(row.tender_offer_status));
+      && row.stage_code !== 'descartado' && !['cerrada_no_go', 'no_presentada', 'adjudicada', 'no_adjudicada'].includes(row.tender_offer_status));
     for (const { id } of open) {
       const { error: insertError } = await database.from('psi_tender_filing_folders').insert({ opportunity_id: id, origin: 'ingreso', etapa: 'observaciones' });
       if (insertError) break;

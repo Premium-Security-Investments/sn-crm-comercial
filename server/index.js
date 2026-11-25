@@ -7946,7 +7946,7 @@ async function readTenderOpenBoard(database, currentProfile, now = new Date()) {
     const tender = tenderByOpportunity.get(row.id) || null;
     const closeDate = (tender ? resolveCanonicalTenderDeadline(tender) : null) || row.expected_close_date || null;
     return { row, tender, closeDate: closeDate ? String(closeDate).slice(0, 10) : null };
-  }).filter(item => item.closeDate && item.closeDate >= today && !['cerrada_no_go', 'presentada', 'adjudicada', 'no_adjudicada'].includes(item.row.tender_offer_status));
+  }).filter(item => item.closeDate && item.closeDate >= today && !['cerrada_no_go', 'no_presentada', 'presentada', 'adjudicada', 'no_adjudicada'].includes(item.row.tender_offer_status));
 
   const [companyBase, documents] = await Promise.all([loadCompanyBase(database), listCompanyProcurementDocuments(database)]);
   let withoutAccess = 0;
@@ -8010,7 +8010,7 @@ async function readTenderSemana(database, currentProfile, now = new Date()) {
     .select('id,sede,company_name,tender_offer_status,stage_code,archive_note,archived_at,discarded_at,lost_at,deleted_at')
     .eq('service_type_code', 'licitacion_publica'));
   const open = opportunities.filter(row => !row.archive_note && !row.archived_at && !row.discarded_at && !row.lost_at && !row.deleted_at
-    && row.stage_code !== 'descartado' && !['cerrada_no_go', 'adjudicada', 'no_adjudicada'].includes(row.tender_offer_status));
+    && row.stage_code !== 'descartado' && !['cerrada_no_go', 'no_presentada', 'adjudicada', 'no_adjudicada'].includes(row.tender_offer_status));
   const ids = open.map(row => row.id);
   const { data: results } = ids.length ? await database.from('psi_tender_offer_results').select('opportunity_id').in('opportunity_id', ids) : { data: [] };
   const withResult = new Set((results || []).map(row => row.opportunity_id));
@@ -8051,7 +8051,7 @@ async function readTenderMiDia(database, currentProfile, now = new Date()) {
     .select('id,sede,company_name,owner_id,tender_offer_status,stage_code,expected_close_date,archive_note,archived_at,discarded_at,lost_at,deleted_at')
     .eq('service_type_code', 'licitacion_publica'));
   const open = opportunities.filter(row => !row.archive_note && !row.archived_at && !row.discarded_at && !row.lost_at && !row.deleted_at
-    && row.stage_code !== 'descartado' && !['cerrada_no_go', 'adjudicada', 'no_adjudicada'].includes(row.tender_offer_status));
+    && row.stage_code !== 'descartado' && !['cerrada_no_go', 'no_presentada', 'adjudicada', 'no_adjudicada'].includes(row.tender_offer_status));
   const ids = open.map(row => row.id);
   const { data: results } = ids.length ? await database.from('psi_tender_offer_results').select('opportunity_id').in('opportunity_id', ids) : { data: [] };
   const withResult = new Set((results || []).map(row => row.opportunity_id));
