@@ -6,7 +6,7 @@ const CONTRACT_VIOLATION_MESSAGE = 'AGT-003 payload reduction contract violation
 const CANARY_CONSUMED_CODE = 'AGT003_REDUCED_CANARY_ALREADY_CONSUMED';
 const CANARY_CONSUMED_MESSAGE = 'AGT-003 reduced canary already consumed.';
 
-const ACCEPTED_POLICY_SHA256 = '3d29b35d4672912a2831c8509e54d15f6367434d9e88d8a8223588c9cba2b4d8';
+const ACCEPTED_POLICY_SHA256 = 'd8367d7e42e4c19b537878e88c3f74647343f9747d257cc8fbc42b74e77736c5';
 
 const ANNOTATION_KEYS = new Set(['title', 'description', '$comment', 'examples', 'default', 'readOnly', 'writeOnly', 'deprecated']);
 
@@ -38,6 +38,7 @@ export const AGT003_REQUIRED_REDUCTION_SEMANTIC_IDS = Object.freeze([
   'missing_critical_fact_blocks_send',
   'one_action_human_review',
   'brief_direct_draft_human_review',
+  'draft_no_internal_state_uses_next_action',
   'json_only_no_extra_keys',
 ]);
 
@@ -64,6 +65,7 @@ const REDUCED_POLICY_TEXT_BY_ID = Object.freeze({
   missing_critical_fact_blocks_send: 'Si falta un hecho crítico para actuar, strategy recomienda verificarlo en vez de enviar.',
   one_action_human_review: 'strategy contiene una única acción, respaldada por evidencia y sujeta a revisión humana.',
   brief_direct_draft_human_review: 'Redacta el borrador de forma breve y directa; revisión humana obligatoria.',
+  draft_no_internal_state_uses_next_action: 'El borrador lo lee el cliente: nunca menciones estados ni registros internos del CRM (congelada, etapa, notas, fechas de congelación). Si next_action_date es futura, es el contacto que el vendedor ya agendó: el borrador propone ese día al cliente.',
   json_only_no_extra_keys: 'Devuelve exclusivamente el JSON solicitado, sin texto adicional ni claves inesperadas.',
 });
 
