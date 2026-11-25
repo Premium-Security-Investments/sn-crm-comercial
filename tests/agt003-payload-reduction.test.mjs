@@ -7,7 +7,7 @@ import { AGT003_COPILOT_POLICY } from '../verticales/comercial/agt003-copilot-en
 
 const MODULE_SPECIFIER = '../verticales/comercial/agt003-payload-reduction.js';
 const MODULE_FILE_PATH = fileURLToPath(new URL(MODULE_SPECIFIER, import.meta.url));
-const FULL_POLICY_SHA256 = '3d29b35d4672912a2831c8509e54d15f6367434d9e88d8a8223588c9cba2b4d8';
+const FULL_POLICY_SHA256 = 'd8367d7e42e4c19b537878e88c3f74647343f9747d257cc8fbc42b74e77736c5';
 const VIOLATION_CODE = 'AGT003_PAYLOAD_REDUCTION_CONTRACT_VIOLATION';
 const CANARY_CONSUMED_CODE = 'AGT003_REDUCED_CANARY_ALREADY_CONSUMED';
 
@@ -242,7 +242,7 @@ test('output schema preserves uncertainty: inferences.confidence, missing_inform
   for (const key of ['human_review_required', 'missing_information', 'warnings']) assert.ok(reduced.outputSchema.required.includes(key));
 });
 
-test('current full policy identity is accepted only at SHA-256 3d29b35d4672912a2831c8509e54d15f6367434d9e88d8a8223588c9cba2b4d8 and reduced policy has every required semantic ID exactly once', async () => {
+test('current full policy identity is accepted only at SHA-256 d8367d7e42e4c19b537878e88c3f74647343f9747d257cc8fbc42b74e77736c5 and reduced policy has every required semantic ID exactly once', async () => {
   const { reduceAgt003PayloadOffline, AGT003_REQUIRED_REDUCTION_SEMANTIC_IDS } = await import(MODULE_SPECIFIER);
   const actualHash = createHash('sha256').update(AGT003_COPILOT_POLICY, 'utf8').digest('hex');
   assert.equal(actualHash, FULL_POLICY_SHA256);

@@ -39,3 +39,16 @@ test('agendar un contacto desde el chat descongela, con constancia en la auditor
     assert.match(block, /psi_sales_opportunity_audit_logs'\)\.insert\(\{ opportunity_id: action\.opportunity_id, changed_by: profile\.id, field_name: 'frozen_until'/);
   }
 });
+
+// Juan, 2026-11-25 (segunda revisión): el borrador le ofreció al cliente «retomar hasta febrero de 2027» porque la
+// última nota de la historia era el congelamiento, y no propuso la llamada que él ya tenía agendada.
+test('reactivar deja la nota en la historia; el borrador no cuenta estados internos y propone el día agendado', async () => {
+  for (const file of ['../server/index.js', '../api/[...path].js']) {
+    const block = read(file).slice(read(file).indexOf("if (action.tipo === 'proximo_seguimiento') {"), read(file).indexOf("if (action.tipo === 'actualizar_datos') {"));
+    assert.match(block, /from\('psi_sales_interactions'\)\.insert\(\{ opportunity_id: action\.opportunity_id, created_by: profile\.id, interaction_type: 'cambio_estado', notes: nota/);
+    assert.match(block, /const nota = `Reactivada: próxima gestión el /);
+  }
+  const { AGT003_COPILOT_POLICY } = await import('../verticales/comercial/agt003-copilot-engine.js');
+  assert.match(AGT003_COPILOT_POLICY, /El borrador lo lee el cliente: nunca le menciones estados ni registros internos del CRM/);
+  assert.match(AGT003_COPILOT_POLICY, /Si el hecho next_action_date es igual o posterior a preparation_date, es el contacto que el vendedor ya agendó/);
+});

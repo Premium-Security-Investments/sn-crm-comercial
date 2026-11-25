@@ -5838,6 +5838,12 @@ async function applyChatAction(database, profile, action) {
     if (wasFrozen) {
       const { error } = await database.from('psi_sales_opportunity_audit_logs').insert({ opportunity_id: action.opportunity_id, changed_by: profile.id, field_name: 'frozen_until', old_value: String(current.frozen_until), new_value: null, notes: 'Reactivada desde el chat de Vig-IA al agendar un contacto' });
       if (error) console.error('No se pudo registrar la reactivación en la auditoría', error);
+      // La reactivación queda también en la historia del cliente, como el congelamiento (cambio_estado). Sin esta nota,
+      // Vig-IA leía «Congelada hasta …» como lo último que pasó y le ofrecía al cliente esperar hasta esa fecha
+      // (Juan, 2026-11-25).
+      const nota = `Reactivada: próxima gestión el ${String(action.fecha).slice(0, 10).split('-').reverse().join('/')}.`;
+      const { error: historia } = await database.from('psi_sales_interactions').insert({ opportunity_id: action.opportunity_id, created_by: profile.id, interaction_type: 'cambio_estado', notes: nota, occurred_at: new Date().toISOString() });
+      if (historia) console.error('No se pudo registrar la reactivación en la historia', historia);
     }
     return { opportunity_id: action.opportunity_id, ...(wasFrozen ? { reactivated: true } : {}) };
   }
