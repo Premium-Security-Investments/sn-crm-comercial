@@ -39,7 +39,7 @@ test('el servidor exige el permiso en las dos rutas y no expone nombres de tiend
 });
 
 test('las tablas son solo del servidor y el permiso existe en la base', () => {
-  const sql = leer('supabase/migrations/234_siio_cotizador_modelos.sql');
+  const sql = leer('supabase/migrations/235_siio_cotizador_modelos.sql');
   assert.match(sql, /insert into public\.psi_access_permissions\(code, name, description, active\) values\s*\('siio_cotizador_modelos'/);
   assert.match(sql, /enable row level security/);
   assert.match(sql, /revoke all on table public\.psi_service_model_stores, public\.psi_service_model_scenarios from public, anon, authenticated;/);

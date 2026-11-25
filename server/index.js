@@ -3472,7 +3472,7 @@ function filterPayrollAggregatesForManagement(rows) {
   return rows.filter(row => SIIO_MANAGEMENT_PAYROLL_VISIBILITY.has(row?.visibility_level));
 }
 
-// Cotizador de modelos de servicio (Gerencia, junto a la Torre; migración 234). Los datos del cliente viven solo en la
+// Cotizador de modelos de servicio (Gerencia, junto a la Torre; migración 235). Los datos del cliente viven solo en la
 // base. Hace falta la Torre y además el permiso de capacidad `siio_cotizador_modelos`: lleva precios, costos y márgenes.
 const SERVICE_MODEL_PERMISSION = 'siio_cotizador_modelos';
 const SERVICE_MODEL_PARAMS_MAX = 20000;
