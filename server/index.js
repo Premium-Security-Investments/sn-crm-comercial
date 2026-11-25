@@ -31,7 +31,7 @@ import { suggestAgt002DocumentRelevance } from '../verticales/licitaciones/agt00
 import { callCreateTenderProcessingJob, callManualTenderOpportunityCreation, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate } from '../verticales/licitaciones/tender-tracking-rpc.js';
 import { planRadarPhaseIdentitySync, applyOfficialSourceLink, tenderProcessBaseReference } from '../verticales/licitaciones/tender-phase-identity.js';
 import { agt002PhaseChangeOpportunityBlocker, appendAgt002ObservationLine, phaseChangeDetectedLine, phaseChangeDocumentSetHash, recordAgt002PhaseChangeDetected, recordAgt002PhaseChangeDocumentsImported } from '../verticales/licitaciones/agt002-phase-change-followup.js';
-import { isIncorporatedAdendaVersion, planObsoleteTenderDocuments, planSamePortfolioObsoleteTenderDocuments } from '../verticales/licitaciones/tender-document-obsolescence.js';
+import { planObsoleteTenderDocuments, planSamePortfolioObsoleteTenderDocuments } from '../verticales/licitaciones/tender-document-obsolescence.js';
 import { compareTenderFamilyRecency, isProcessFamilySupersededRow, planTenderProcessFamilySupersession, tenderProcessFamilyKey, withProcessFamilySupersededRaw } from '../verticales/licitaciones/tender-process-family.js';
 import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../verticales/licitaciones/tender-durable-flags.js';
 import { filterActiveTenderCompetibilityRows, requireTenderCompetibleForConversion } from '../verticales/licitaciones/tender-competibility-policy.js';
@@ -6724,15 +6724,49 @@ async function archiveVersionsReplacedByUpload(database, { opportunityId, tender
   return { archived, doubts };
 }
 
-// Pereira (2026-11-24): «INCLUYE ADENDA PLIEGO…», «INCLUYE ADENDA Anexo No. 7…» y «INCLUYE ADENDA Anexo 8…» quedaron
-// vigentes junto a sus versiones anteriores y Vig-IA leyó las dos (garantía con el presupuesto viejo). Antes de cada
-// reanálisis se pasa a historial lo que una versión con adenda incorporada ya vigente reemplaza; misma regla que la carga.
-async function archiveVersionsSupersededByIncorporatedAdendas(database, { opportunityId, actorId }) {
-  const rows = await must(database.from('psi_tender_document_versions').select('name').eq('opportunity_id', opportunityId).eq('current', true));
-  const incomingNames = [...new Set((rows || []).map(row => row.name).filter(isIncorporatedAdendaVersion))];
-  if (!incomingNames.length) return { archived: [], doubts: [] };
+// Pereira (2026-11-24) y DEAJ (2026-11-25): «INCLUYE ADENDA …» y «… Ajustado 23112026» quedaron vigentes junto a sus
+// versiones anteriores y Vig-IA leyó las dos. Antes de cada reanálisis se repasan los vigentes en el orden en que se
+// subieron, por tandas de carga, con la misma regla que la carga (planObsoleteTenderDocuments); lo reemplazado
+// pasa a historial (nunca se borra). Si el reemplazado es el único vigente de su fuente, queda como duda.
+async function archiveVersionsSupersededByLaterVersions(database, { opportunityId, actorId }) {
+  const rows = await must(database.from('psi_tender_document_versions').select('name,source,created_at').eq('opportunity_id', opportunityId).eq('current', true));
+  const ordered = [...(rows || [])].sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
+  const archivedKeys = new Set();
+  const planned = [];
+  const doubts = [];
+  // Tandas de carga: lo subido con menos de 2 minutos de diferencia llegó junto y no se reemplaza entre sí (igual que la carga).
+  const batches = [];
+  for (const row of ordered) {
+    const last = batches.at(-1);
+    const gap = last ? Date.parse(row.created_at) - Date.parse(last.at(-1).created_at) : Infinity;
+    if (last && gap >= 0 && gap < 2 * 60 * 1000) last.push(row); else batches.push([row]);
+  }
+  batches.forEach((batch, index) => {
+    const incomingNames = [...new Set(batch.map(row => row.name).filter(name => !archivedKeys.has(secopDocumentNameKey(name))))];
+    const incomingKeys = new Set(incomingNames.map(secopDocumentNameKey));
+    const earlier = [...new Set(batches.slice(0, index).flat().map(row => row.name)
+      .filter(name => !incomingKeys.has(secopDocumentNameKey(name)) && !archivedKeys.has(secopDocumentNameKey(name))))];
+    if (!earlier.length || !incomingNames.length) return;
+    const plan = planObsoleteTenderDocuments({ currentNames: earlier, incomingNames });
+    for (const item of plan.archive) { archivedKeys.add(secopDocumentNameKey(item.name)); planned.push(item); }
+    doubts.push(...plan.doubts);
+  });
+  if (!planned.length) return { archived: [], doubts };
+  await requireTenderDocumentRetirement(database);
   const tenderId = await getTenderIdForOpportunity(database, opportunityId);
-  return archiveVersionsReplacedByUpload(database, { opportunityId, tenderId, incomingNames, actorId });
+  const bySource = new Map();
+  for (const row of rows || []) bySource.set(row.source, [...(bySource.get(row.source) || []), row.name]);
+  const archived = [];
+  for (const [source, names] of bySource) {
+    const leaving = names.filter(name => archivedKeys.has(secopDocumentNameKey(name)));
+    if (!leaving.length) continue;
+    const keep = [...new Set(names.filter(name => !archivedKeys.has(secopDocumentNameKey(name))))];
+    const items = planned.filter(item => leaving.some(name => secopDocumentNameKey(name) === secopDocumentNameKey(item.name)));
+    if (!keep.length) { doubts.push(...items.map(item => ({ name: item.name, candidate: item.replacedBy, reason: 'unico_vigente_de_su_fuente' }))); continue; }
+    await retireSupersededOfficialTenderDocuments(database, { opportunityId, tenderId, sourceLabel: source, keepNames: keep, actorId });
+    archived.push(...items);
+  }
+  return { archived, doubts };
 }
 
 async function importOfficialTenderDocuments(database, opportunityId, opportunity, currentProfile, { analyze = true, phaseChange = null } = {}) {
@@ -8918,7 +8952,7 @@ app.post('/api/agt002-manual-reanalysis', async (req, res) => {
     if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
     await ensureTenderOpportunity(database, opportunityId, currentProfile);
     try {
-      const replaced = await archiveVersionsSupersededByIncorporatedAdendas(database, { opportunityId, actorId: currentProfile?.id });
+      const replaced = await archiveVersionsSupersededByLaterVersions(database, { opportunityId, actorId: currentProfile?.id });
       if (replaced.archived.length) console.log(JSON.stringify({ event: 'tender_reanalysis_archived_superseded', opportunity_id: opportunityId, archived: replaced.archived.map(item => item.name).slice(0, 20) }));
     } catch (archiveError) {
       console.warn('tender_reanalysis_archive_failed', { event: 'tender_reanalysis_archive_failed', opportunity_id: opportunityId, code: String(archiveError?.code || 'unknown').slice(0, 40) });
