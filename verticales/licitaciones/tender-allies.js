@@ -65,10 +65,12 @@ const COMPANY_COLUMNS = 'nit,dv,name,acronyms,representative,phone,email,license
 const CONTACT_COLUMNS = 'contact_name,contact_title,contact_phone,contact_email';
 // Frecuencia MinTIC y SG-SST (233).
 const CAPABILITY_COLUMNS = 'radio_cities,radio_source,sgsst_pct,sgsst_date';
-const missingColumn = error => String(error?.code || '') === '42703' || /contact_(name|title|phone|email)|radio_(cities|source)|sgsst_(pct|date)/.test(String(error?.message || ''));
+// La página web y lo que Vig-IA leyó de ella (240).
+const WEBSITE_COLUMNS = 'website,website_info,website_read_at,website_read_error';
+const missingColumn = error => String(error?.code || '') === '42703' || /contact_(name|title|phone|email)|radio_(cities|source)|sgsst_(pct|date)|website/.test(String(error?.message || ''));
 const missingFunction = error => ['42883', 'PGRST202'].includes(String(error?.code || '').toUpperCase());
-// De la más completa a la más vieja: con la 233, con la 197, sólo la 196.
-const COMPANY_SELECTS = [`${COMPANY_COLUMNS},${CONTACT_COLUMNS},${CAPABILITY_COLUMNS}`, `${COMPANY_COLUMNS},${CONTACT_COLUMNS}`, COMPANY_COLUMNS];
+// De la más completa a la más vieja: con la 240, con la 233, con la 197, sólo la 196.
+const COMPANY_SELECTS = [`${COMPANY_COLUMNS},${CONTACT_COLUMNS},${CAPABILITY_COLUMNS},${WEBSITE_COLUMNS}`, `${COMPANY_COLUMNS},${CONTACT_COLUMNS},${CAPABILITY_COLUMNS}`, `${COMPANY_COLUMNS},${CONTACT_COLUMNS}`, COMPANY_COLUMNS];
 
 /** Las empresas con el contacto en cuatro campos (197) y la frecuencia y el SG-SST (233); sin ellas, sin esos campos. */
 async function allCompanies(database) {
