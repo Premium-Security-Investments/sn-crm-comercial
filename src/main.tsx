@@ -83,6 +83,7 @@ import { competitorContractsDue, renewalsDue } from './vigia/renewal-alerts.js';
 import { dealMix } from './vigia/deal-mix.js';
 import { AvancysCollectionPanel } from './vigia/AvancysCollectionPanel';
 import { AvancysCommissionsPanel } from './vigia/AvancysCommissionsPanel';
+import { ContratosClientesPanel } from './vigia/ContratosClientesPanel';
 import { OpportunityQuotes, QuotesSection } from './vigia/QuotesSection';
 import { bogotaDay, decisionQuota, type DecisionQuota, DELETE_PERMISSION, isDeleteRequested, isFrozen, isOutOfActivePipeline, isPendingDecision, pendingDecisions } from './vigia/opportunity-decision-rules.js';
 import { bogotaMonth, monthlyGoalCompliance, type BehaviorReport, type BehaviorStatus } from './vigia/commercial-behavior.js';
@@ -3032,6 +3033,8 @@ function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () =>
           {!pushRows.length && <EmptyState title="Nada detenido" text="No hay negocios vencidos, sin agenda, con 10+ días sin seguimiento ni urgentes, fuera de los de arriba." />}
         </Panel>
         <div className="stack">
+          {/* Contratos de clientes (Juan, 2026-11-26): vencimientos y clientes sin contrato vigente. */}
+          <ContratosClientesPanel modo="equipo" />
           {teamRenewals.length > 0 && <Panel title="Renovaciones por vencer (90 días)">
             <ul className="dashboard-simple-list">{teamRenewals.map(({ opportunity: o, phrase }) => <li key={o.id}><a href={`#/detail/${o.id}`}><strong>{formatDisplayName(o.company_name)}</strong></a> <span>{phrase} · {formatDisplayName(o.owner_name || 'Sin comercial')}</span></li>)}</ul>
           </Panel>}
@@ -3179,6 +3182,7 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
               competitors={data.competitors || []} onChanged={refresh} empty={nowEmpty} now={now} />}
           {isCalm && <TodayDone opportunities={opportunities.filter(o => isAgt003CommercialOpportunity(o))} now={now} />}
           <RenewalsDue items={renewals} />
+          <ContratosClientesPanel modo="propio" />
           <RenewalsDue items={competitorContracts} title="Contratos de la competencia por vencer" />
           <WeekList upcoming={weekRows} />
         </div>

@@ -581,6 +581,35 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
   }
 
   /**
+   * El comercial de cada cliente y las fechas de su contrato, por NIT (contratos de clientes; Juan, 2026-11-26).
+   * El comercial es el asignado al cliente en Avancys. Las fechas son las del contrato (`project.project`): al
+   * 2026-11-25 estaban vacías en los 2.808 contratos, así que hoy sólo se devuelven cuando alguien las haya llenado.
+   */
+  async function clientesPorNit({ nits }) {
+    const lista = [...new Set((nits || []).map(normalizarIdentificacion).filter(Boolean))];
+    const salida = {};
+    for (let i = 0; i < lista.length; i += 300) {
+      const clientes = await leer('cliente', [['ref_num', 'in', lista.slice(i, i + 300)]], { limite: 1000 });
+      const porId = new Map(clientes.map(c => [c.id, c]));
+      const contratos = porId.size ? await leer('contrato', [['partner_id', 'in', [...porId.keys()]]], { limite: 2000 }) : [];
+      for (const cliente of clientes) {
+        const nit = normalizarIdentificacion(cliente.ref_num);
+        if (!nit || salida[nit]) continue;
+        const suyos = contratos.filter(c => unoAMuchos(c.partner_id) === cliente.id && (c.date_start || c.date));
+        const inicio = suyos.map(c => c.date_start).filter(Boolean).sort()[0] || null;
+        const fin = suyos.map(c => c.date).filter(Boolean).sort().slice(-1)[0] || null;
+        salida[nit] = Object.freeze({
+          comercial_id: unoAMuchos(cliente.user_id),
+          comercial: Array.isArray(cliente.user_id) ? texto(cliente.user_id[1]) : null,
+          fecha_inicio: inicio ? String(inicio).slice(0, 10) : null,
+          fecha_fin: fin ? String(fin).slice(0, 10) : null,
+        });
+      }
+    }
+    return Object.freeze(salida);
+  }
+
+  /**
    * Lo que entró a cartera en un mes y las facturas que paga (comisiones; Juan, 2026-11-25: «se les paga por lo que ya
    * haya pagado el cliente; si paga parcial se le paga parcial»).
    *
@@ -823,5 +852,5 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
     });
   }
 
-  return Object.freeze({ origen: config.origen, database: config.database, devengadoDelMes, facturacionPorCliente, cobroPorComercial, pagosDelMes, clienteDelPuesto, puestosDelCliente, clientesDelComercial, buscarClientes });
+  return Object.freeze({ origen: config.origen, database: config.database, devengadoDelMes, facturacionPorCliente, cobroPorComercial, pagosDelMes, clientesPorNit, clienteDelPuesto, puestosDelCliente, clientesDelComercial, buscarClientes });
 }
