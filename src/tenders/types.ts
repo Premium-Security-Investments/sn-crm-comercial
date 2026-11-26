@@ -1129,19 +1129,21 @@ export type TenderMiDiaAccion = {
   criticos?: number; criticos_titulos?: string[];
   /** Cierre cuya fecha contradice otra fuente: sale en Presentar «por confirmar en SECOP», nunca en el día. */
   por_confirmar?: boolean;
+  /** Las fuentes de la entidad no coinciden en la hora: `value` trae la más temprana (Medellín, 26-nov). */
+  hora_por_confirmar?: boolean;
 };
 export type TenderMiDiaPendiente = {
   opportunity_id: string | null; proceso: string | null; ref: string | null; actividad: TenderMiDiaActividad; texto: string;
   responsable: string | null; vencido_hace: number | null; destino: 'proceso' | 'requisitos';
 };
-export type TenderMiDiaEntidad = { key: string; opportunity_id: string; proceso: string; ref: string | null; texto: string; value: string; day: string; tiene_hora: boolean };
+export type TenderMiDiaEntidad = { key: string; opportunity_id: string; proceso: string; ref: string | null; texto: string; value: string; day: string; tiene_hora: boolean; hora_por_confirmar?: boolean };
 export type TenderMiDiaTramite = { key: string; titulo: string; estado: string; sin_dato: boolean; procesos: number; primer_cierre: string | null };
 export type TenderMiDiaUnirnos = { opportunity_id: string; proceso: string; ref: string | null; cierre: string | null; motivo: string };
 export type TenderMiDia = {
   today: string; hasta: string; procesos: number; without_access: number; hechos_disponible: boolean;
   frase: {
     observaciones: number; cierres: number; manifestaciones: { proceso: string; opportunity_id: string }[];
-    primero: { proceso: string; texto: string; value: string; day: string; tiene_hora: boolean; opportunity_id: string } | null;
+    primero: { proceso: string; texto: string; value: string; day: string; tiene_hora: boolean; opportunity_id: string; hora_por_confirmar?: boolean } | null;
   };
   actividades: {
     observar: { esta_semana: number; proxima: number; items: TenderMiDiaAccion[]; proximo: TenderMiDiaAccion | null };

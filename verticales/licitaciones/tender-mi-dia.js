@@ -117,14 +117,16 @@ export function buildTenderMiDia({ processes = [], requisitos = [], hechos = [],
       if (seen.has(key)) continue;
       seen.add(key);
       const tiene_hora = tenderSemanaTieneHora(deadline.value);
+      // Las fuentes de la entidad no coinciden en la hora: se muestra la más temprana, «por confirmar» (Medellín, 26-nov).
+      const hora = deadline.horaPorConfirmar ? { hora_por_confirmar: true } : {};
       if (accion) {
         const hecho = hechoPorClave.get(key) || null;
         acciones.push({ ...base, key, actividad: accion.actividad, texto: accion.texto, value: deadline.value, day, tiene_hora,
-          dias: daysBetween(today, day), responsable: process.responsable || null,
+          dias: daysBetween(today, day), responsable: process.responsable || null, ...hora,
           ...(deadline.kind === 'SUBMISSION' ? { criticos: criticos.length, criticos_titulos: criticos.slice(0, 5) } : {}),
           hecho: hecho ? { at: hecho.done_at || null, por: hecho.done_by_name || null } : null });
       } else if (day <= finSemana) {
-        entidad.push({ ...base, key, texto: String(deadline.label || deadline.kind || 'Fecha del cronograma').trim(), value: deadline.value, day, tiene_hora });
+        entidad.push({ ...base, key, texto: String(deadline.label || deadline.kind || 'Fecha del cronograma').trim(), value: deadline.value, day, tiene_hora, ...hora });
       }
     }
     // Mis pendientes: lo que no tiene fecha de la entidad pero alguien debe resolver.
@@ -189,7 +191,7 @@ export function buildTenderMiDia({ processes = [], requisitos = [], hechos = [],
       observaciones: abiertas(observarSemana).length,
       manifestaciones: manifestaciones.map(item => ({ proceso: item.proceso, opportunity_id: item.opportunity_id })),
       cierres: abiertas(semana.filter(item => item.texto === 'Presentar la oferta (cierre)')).length,
-      primero: primero ? { proceso: primero.proceso, texto: primero.texto, value: primero.value, day: primero.day, tiene_hora: primero.tiene_hora, opportunity_id: primero.opportunity_id } : null,
+      primero: primero ? { proceso: primero.proceso, texto: primero.texto, value: primero.value, day: primero.day, tiene_hora: primero.tiene_hora, opportunity_id: primero.opportunity_id, ...(primero.hora_por_confirmar ? { hora_por_confirmar: true } : {}) } : null,
     },
     actividades: {
       observar: { esta_semana: observarSemana.length, proxima: observarProxima.length, items: observarSemana.slice(0, 4),

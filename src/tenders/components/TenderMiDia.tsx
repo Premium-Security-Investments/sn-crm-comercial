@@ -25,6 +25,9 @@ function hora(value: string, tieneHora: boolean) {
 /** «3 críticos abiertos»: lo que no se subsana o causa rechazo; el detalle se trabaja en el proceso. */
 const criticosTexto = (n: number) => (n === 1 ? '1 crítico abierto' : `${n} críticos abiertos`);
 
+/** Las fuentes de la entidad dan horas distintas: se muestra la más temprana. */
+const HORA_POR_CONFIRMAR = 'la hora más temprana de las fuentes; por confirmar';
+
 function Tag({ actividad }: { actividad: TenderMiDiaActividad }) {
   return <span className={`mi-dia-tag is-${actividad}`}>{ACTIVIDAD[actividad]}</span>;
 }
@@ -64,7 +67,7 @@ export function TenderMiDia({ request, onOpen, onGo, onSummary }: { request: Ten
 
   const row = (item: TenderMiDiaAccion) => <div key={item.key} className={`mi-dia-row${item.hecho ? ' is-done' : ''}`}>
     <span className="mi-dia-hora">{hora(item.value, item.tiene_hora)}</span>
-    <span className="mi-dia-text"><Tag actividad={item.actividad} />{item.texto} · {item.proceso}{item.criticos ? <> · <b>{criticosTexto(item.criticos)}</b></> : null} {goProcess(item.opportunity_id)}
+    <span className="mi-dia-text"><Tag actividad={item.actividad} />{item.texto} · {item.proceso}{item.hora_por_confirmar ? <> · <b>{HORA_POR_CONFIRMAR}</b></> : null}{item.criticos ? <> · <b>{criticosTexto(item.criticos)}</b></> : null} {goProcess(item.opportunity_id)}
       {item.hecho && <small className="muted"> — hecho{item.hecho.por ? ` por ${item.hecho.por}` : ''}</small>}</span>
     <span className="mi-dia-who">{item.responsable || '—'}</span>
     {data.hechos_disponible
@@ -86,7 +89,7 @@ export function TenderMiDia({ request, onOpen, onGo, onSummary }: { request: Ten
           frase.cierres ? <>presenta <b>{frase.cierres === 1 ? '1 oferta' : `${frase.cierres} ofertas`}</b></> : null,
         ].filter(Boolean).map((part, index, list) => <span key={index}>{index > 0 ? (index === list.length - 1 ? ' y ' : ', ') : ''}{part}</span>)}.</>
         : <>Esta semana no tiene plazos para radicar.</>}
-      {primero && <> Lo primero: <b>{primero.proceso}, {dayTitle(primero.day, Math.round((Date.parse(`${primero.day}T00:00:00Z`) - Date.parse(`${data.today}T00:00:00Z`)) / 86_400_000)).toLowerCase()}{primero.tiene_hora ? `, ${hora(primero.value, true)}` : ''}</b>{primero.tiene_hora ? '' : '.'}</>}
+      {primero && <> Lo primero: <b>{primero.proceso}, {dayTitle(primero.day, Math.round((Date.parse(`${primero.day}T00:00:00Z`) - Date.parse(`${data.today}T00:00:00Z`)) / 86_400_000)).toLowerCase()}{primero.tiene_hora ? `, ${hora(primero.value, true)}` : ''}</b>{primero.hora_por_confirmar ? <> ({HORA_POR_CONFIRMAR})</> : null}{primero.tiene_hora ? '' : '.'}</>}
     </p>
 
     <h3 className="mi-dia-h">Lo general · las cuatro actividades</h3>
