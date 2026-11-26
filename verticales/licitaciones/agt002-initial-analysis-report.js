@@ -1,4 +1,5 @@
 import { readAgt002InitialAnalysisStatus } from './agt002-initial-analysis-status.js';
+import { agt002AplicarHoraMasTemprana } from './agt002-hora-en-disputa.js';
 
 function readError(label) {
   const error = new Error(label);
@@ -50,12 +51,14 @@ export function projectAgt002InitialReport(envelope, documentNames = new Map()) 
       id: text(member.document_id),
       name: nameOf(member.document_id),
     })),
-    deadlines: arr(envelope?.meta?.process_deadlines).map(deadline => ({
+    // Si las fuentes de la entidad no coinciden en la hora de un plazo, manda la más temprana (agt002-hora-en-disputa).
+    deadlines: arr(envelope?.meta?.process_deadlines).map(raw => agt002AplicarHoraMasTemprana(raw, envelope?.claims)).map(deadline => ({
       kind: text(deadline.kind),
       value: typeof deadline.value === 'string' ? deadline.value : null,
       certainty: text(deadline.certainty),
       status: text(deadline.status),
       label: typeof deadline.label === 'string' && deadline.label.trim() ? deadline.label.trim() : null,
+      ...(deadline.hora_por_confirmar ? { horaPorConfirmar: true, horasEnFuentes: deadline.horas_en_fuentes } : {}),
     })),
     coverage: arr(envelope?.coverage).map(entry => ({
       block: text(entry.block),
