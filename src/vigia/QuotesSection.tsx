@@ -5,6 +5,7 @@ import {
   type GuardDayType, type GuardModality, type GuardPostInput, type GuardRates, type QuoteTotals, type TechCategory, type TechLineInput, type TechRates,
 } from './quote-engine.js';
 import { opportunityValuesFromQuote, pesos as proposalPesos, proposalContent } from './quote-proposal.js';
+import { buscarEnCatalogo, lineaDesdeProducto, type ProductoCatalogo } from './catalogo-avancys.js';
 
 // AGT-003 — Sección Cotizar (entrega 3; Juan, 2026-11-11). Una sola sección para los dos cotizadores: vigilancia
 // (puestos, se cobra cada mes) y tecnología (equipos, insumos y mano de obra, se paga una vez). Se entra desde el menú
@@ -288,7 +289,8 @@ function QuoteEditor({ quoteId, opportunities, guardRates, techRates, ratesNote,
 
     {kinds.tecnologia && <section className="panel">
       <h2>Medios tecnológicos · equipos, insumos y mano de obra</h2>
-      <p className="muted">Escriba el costo unitario sin IVA; el precio sale con el margen del {Math.round(techRates.margin * 100)} %. La comisión se calcula sobre el precio de los equipos.</p>
+      <p className="muted">Busque el producto en el catálogo de Avancys (trae su costo) o escriba la línea con el costo unitario sin IVA; el precio sale con el margen del {Math.round(techRates.margin * 100)} %. La comisión se calcula sobre el precio de los equipos.</p>
+      <CatalogSearch onAdd={line => setLines(list => (list.length === 1 && !String(list[0]?.description || '').trim() && !Number(list[0]?.unitCost) ? [line] : [...list, line]))} />
       <div className="form gridform">
         <label className="wide">Entrega e instalación (opcional)<input value={deliveryTerms} maxLength={300} onChange={e => setDeliveryTerms(e.target.value)} placeholder="Ej. 20 días hábiles desde la orden de compra" /></label>
       </div>
@@ -342,6 +344,37 @@ function QuoteEditor({ quoteId, opportunities, guardRates, techRates, ratesNote,
         {saved.guardPosts.length > 0 && <p className="muted">Los puestos se traen al formulario de cierre desde la ficha de la oportunidad, con «Traer puestos de la cotización».</p>}
       </div>}
     </section>
+  </div>;
+}
+
+type CatalogProduct = ProductoCatalogo & { linea: 'equipo' | 'insumo' | 'mano_de_obra' };
+/**
+ * Buscador del catálogo de Avancys (entrega 5a; Juan, 2026-11-26). El catálogo se pide al abrir el buscador, una vez;
+ * cada producto agregado entra como línea con su código, su tipo y su costo, y se puede editar como cualquier línea.
+ */
+function CatalogSearch({ onAdd }: { onAdd: (line: TechLineInput) => void }) {
+  const [catalog, setCatalog] = useState<CatalogProduct[] | null>(null);
+  const [note, setNote] = useState('');
+  const [query, setQuery] = useState('');
+  const [loading, setLoading] = useState(false);
+  const load = async () => {
+    if (catalog || loading) return;
+    setLoading(true);
+    try {
+      const r = await api<{ productos: CatalogProduct[]; motivo: string | null }>('/api/agt003/catalogo');
+      setCatalog(r.productos || []); setNote(r.motivo || '');
+    } catch (err) { setNote(err instanceof Error ? err.message : String(err)); setCatalog([]); } finally { setLoading(false); }
+  };
+  const results = catalog ? buscarEnCatalogo(catalog, query, 12) : [];
+  return <div className="quote-catalog">
+    <label>Buscar en el catálogo de Avancys<input value={query} onFocus={() => void load()} onChange={e => setQuery(e.target.value)} placeholder="Ej. domo 4mp, sensor, cable utp, dvr 8" /></label>
+    {loading && <p className="muted">Cargando el catálogo…</p>}
+    {note && <p className="muted">{note}</p>}
+    {catalog && query.trim() && !results.length && <p className="muted">Nada en el catálogo con «{query}». Puede escribir la línea a mano.</p>}
+    {results.length > 0 && <ul className="quote-catalog-results">{results.map(p => <li key={`${p.codigo}-${p.nombre}`}>
+      <span><strong>{p.nombre}</strong><small>{p.codigo ? `${p.codigo} · ` : ''}{p.categoria} · costo {pesos(p.costo)}{p.unidad && p.unidad !== 'Und' ? ` por ${p.unidad}` : ''}</small></span>
+      <button type="button" className="secondary" onClick={() => { onAdd(lineaDesdeProducto(p)); setQuery(''); }}>Agregar</button>
+    </li>)}</ul>}
   </div>;
 }
 

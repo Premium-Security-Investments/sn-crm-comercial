@@ -92,6 +92,7 @@ import { DEFAULT_GUARD_RATES, DEFAULT_TECH_RATES, normalizeGuardRates, normalize
 import { GUARD_OPPORTUNITY_TYPE, TECH_OPPORTUNITY_TYPE, opportunityValuesFromQuote } from '../src/vigia/quote-proposal.js';
 import { calcularComisiones } from '../src/vigia/comisiones.js';
 import { contratosDeClientes, inicioDeComision, resumenContratos } from '../src/vigia/contratos-clientes.js';
+import { catalogoParaCotizar } from '../src/vigia/catalogo-avancys.js';
 import { CLIENT_DEAL_FIELD, CLIENT_PROFILE_FIELDS, hasClientProfileFields, normalizeClientDeal, normalizeClientProfile, profileCompleteness } from '../src/vigia/client-profile.js';
 import { LEAD_ANALYSIS_CONTRACT_VERSION, bogotaMonthStartIso, monthlyMaxFrom } from '../src/vigia/lead-analysis.js';
 import { AGT003_MODEL_FAILURE, agt003ModelFailureMessage, classifyAgt003ModelFailure } from '../src/vigia/model-failures.js';
@@ -523,6 +524,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/agt003/avancys/cobro-por-comercial': ['vigia', ACTIONS.MODULE_DASHBOARD_VIEW],
   'GET /api/agt003/avancys/comisiones': ['vigia', ACTIONS.MODULE_DASHBOARD_VIEW],
   'GET /api/agt003/contratos-clientes': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
+  'GET /api/agt003/catalogo': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
   'GET /api/agt003/quote-rates': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'POST /api/agt003/quote-rates': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
   'GET /api/agt003/quotes': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
@@ -4711,6 +4713,33 @@ async function closureFormState(database, opportunity) {
 // Falla blanda en los dos puntos donde puede faltar algo: un comercial sin equivalencia y un
 // despliegue sin credenciales devuelven una lista vacía CON su razón escrita, nunca un error. Que
 // Avancys no conteste no puede tumbarle la pantalla a nadie.
+// AGT-003 — Catálogo de Avancys para el cotizador (entrega 5a; Juan, 2026-11-26: «si ya está en Avancys, ¿por qué no
+// se trae todo y ya?»). Todo el catálogo vendible, con su costo; el cotizador le aplica el margen de las tarifas. Lo
+// usa quien cotiza. El último catálogo leído se guarda para mostrarlo al instante si Avancys no responde.
+app.get('/api/agt003/catalogo', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireQuoteWriter(currentProfile);
+    const database = requireDb();
+    res.set('Cache-Control', 'private, no-store');
+    const lector = crearLectorAvancys();
+    if (!lector) {
+      const guardado = await leerGuardado(database, 'catalogo-avancys');
+      return res.json(guardado || { productos: [], motivo: 'Avancys no está configurado en este ambiente.' });
+    }
+    try {
+      const leido = await lector.catalogoDeProductos();
+      const respuesta = { productos: catalogoParaCotizar(leido.productos), as_of: leido.as_of, motivo: null, medido_en: new Date().toISOString() };
+      await guardarTorre(database, 'catalogo-avancys', respuesta);
+      return res.json(respuesta);
+    } catch (falla) {
+      if (!falla?.codigo) throw falla;
+      const guardado = await leerGuardado(database, 'catalogo-avancys');
+      return res.json(guardado ? { ...guardado, motivo: `Avancys no respondió (${falla.codigo}): catálogo del último cargue.` } : { productos: [], motivo: `Avancys no respondió: ${falla.codigo}` });
+    }
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
 // AGT-003 — Contratos de los clientes: estado y vencimiento (Juan, 2026-11-26). Las fechas salen de Avancys cuando las
 // tenga y, mientras tanto, del archivo cargado en psi_client_contracts (migración 238); cada fila dice su fuente. El
 // alcance es el de «Mis clientes»: el comercial ve los clientes que tiene asignados en Avancys; dirección, todos, salvo

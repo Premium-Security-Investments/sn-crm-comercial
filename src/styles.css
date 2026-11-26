@@ -1292,3 +1292,11 @@ td.numeric-value{white-space:nowrap}
 .contratos-cifras strong{color:#10213d;font-size:18px}
 .contratos-alerta{border-left:4px solid #d97706}
 .contratos-panel details,.contratos-alerta details{margin-top:8px}
+
+/* Catálogo de Avancys en el cotizador (entrega 5a, 2026-11-26). */
+.quote-catalog{display:grid;gap:6px;margin:6px 0 12px}
+.quote-catalog label{display:flex;flex-direction:column;gap:4px;font-weight:700}
+.quote-catalog-results{list-style:none;margin:0;padding:0;border:1px solid #dfe8f4;border-radius:12px;max-height:340px;overflow:auto}
+.quote-catalog-results li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;border-top:1px solid #eef2f7}
+.quote-catalog-results li:first-child{border-top:0}
+.quote-catalog-results small{display:block;color:#64748b;font-size:12px}
