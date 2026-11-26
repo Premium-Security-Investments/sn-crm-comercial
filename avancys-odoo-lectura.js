@@ -27,6 +27,8 @@ const CAMPOS = Object.freeze({
   cliente: Object.freeze(['id', 'name', 'ref_num', 'ref_type_id', 'verification_code', 'is_company', 'user_id', 'state_id', 'write_date']),
   // Comisiones por pagos recibidos (Juan, 2026-11-25): los abonos a cartera del mes y las facturas que nombran.
   recaudo: Object.freeze(['id', 'date', 'name', 'ref', 'credit', 'journal_id', 'write_date']),
+  // Catálogo para el cotizador (entrega 5a, 2026-11-26).
+  producto: Object.freeze(['id', 'default_code', 'name', 'categ_id', 'type', 'standard_price', 'uom_id', 'write_date']),
   facturaComision: Object.freeze(['id', 'name', 'partner_id', 'amount_untaxed', 'amount_total', 'amount_residual', 'move_type', 'invoice_date', 'journal_id', 'write_date']),
 });
 
@@ -35,6 +37,7 @@ const MODELO = Object.freeze({
   facturaPago: 'account.move',
   facturaComision: 'account.move',
   recaudo: 'account.move.line',
+  producto: 'product.product',
   orden: 'project.service.order.line.invoice',
   puesto: 'hr.roster.puesto',
   contrato: 'project.project',
@@ -609,6 +612,23 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
     return Object.freeze(salida);
   }
 
+  /** Los productos vendibles y activos de Avancys, con su costo (catálogo del cotizador; entrega 5a). */
+  async function catalogoDeProductos() {
+    const filas = await leer('producto', [['sale_ok', '=', true], ['active', '=', true]], { limite: MAX_FILAS_PAGINADO, orden: 'id asc', pagina: 500 });
+    return Object.freeze({
+      productos: Object.freeze(filas.map(p => Object.freeze({
+        codigo: texto(p.default_code),
+        nombre: texto(p.name) || '',
+        categoria: Array.isArray(p.categ_id) ? texto(p.categ_id[1]) || '' : '',
+        tipo: texto(p.type),
+        costo: Number(p.standard_price) || 0,
+        unidad: Array.isArray(p.uom_id) ? texto(p.uom_id[1]) : null,
+        actualizado: p.write_date ? String(p.write_date).slice(0, 10) : null,
+      }))),
+      as_of: corteDe([filas]),
+    });
+  }
+
   // Agrupación con mínimo de una fecha, para no traer miles de filas (primer servicio, primera factura de monitoreo).
   async function minimoPorCliente(clave, dominio, campoCliente, campoFecha) {
     const id = await autenticar();
@@ -905,5 +925,5 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
     });
   }
 
-  return Object.freeze({ origen: config.origen, database: config.database, devengadoDelMes, facturacionPorCliente, cobroPorComercial, pagosDelMes, clientesPorNit, clienteDelPuesto, puestosDelCliente, clientesDelComercial, buscarClientes });
+  return Object.freeze({ origen: config.origen, database: config.database, devengadoDelMes, facturacionPorCliente, cobroPorComercial, pagosDelMes, clientesPorNit, catalogoDeProductos, clienteDelPuesto, puestosDelCliente, clientesDelComercial, buscarClientes });
 }
