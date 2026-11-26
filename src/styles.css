@@ -1251,6 +1251,7 @@ td.numeric-value{white-space:nowrap}
 .ally-rup-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}.ally-rup-head button,.ally-rup-head a.button{padding:7px 12px;font-size:13px}.ally-rup-actions{display:flex;gap:8px;flex-wrap:wrap}.ruppro-hint,.ally-rup>p.ruppro-hint{margin:6px 0;padding:8px 12px;border-left:3px solid #1b64f2;background:#eef4ff;border-radius:6px;font-size:14px;line-height:1.45;color:#1b355f}.ruppro-link{color:#1b64f2;font-weight:700;text-decoration:underline;text-underline-offset:2px}.ruppro-link:hover{color:#174ea6}
 .ally-rup>p{margin:0;font-size:12px}.ally-rup-source{color:#40516b;font-weight:600}
 .ally-rup-grid{display:grid;grid-template-columns:190px minmax(0,1fr);gap:4px 10px;margin:0;font-size:13px}.ally-rup-grid dd{margin:0;overflow-wrap:anywhere}
+.ally-web{grid-column:1/-1;display:grid;gap:10px;padding:12px;border:1px solid #e2eaf5;border-radius:12px;background:#fbfdff;min-width:0}.ally-web>p{margin:0;font-size:13px}.ally-web ul{margin:4px 0 0;padding-left:18px;font-size:13px}.ally-web-sedes p.muted{margin:2px 0;font-size:12px}.ally-web details{font-size:12px}.ally-web a{overflow-wrap:anywhere}
 .tender-allies-rup-line{display:block;color:#526173;font-size:12px}
 @media(max-width:700px){.ally-rup-grid{grid-template-columns:minmax(0,1fr)}.ally-rup-grid dt{margin-top:6px}}
 

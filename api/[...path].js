@@ -204,6 +204,7 @@ import { decideAgt002Lesson, listAgt002Lessons } from '../verticales/licitacione
 import { agt002CompanyClarificationSuggestion, AGT002_COMPANY_CLARIFICATION_LINE_MAX } from '../verticales/licitaciones/agt002-company-clarification.js';
 import { readAgt002InitialAnalysisReport } from '../verticales/licitaciones/agt002-initial-analysis-report.js';
 import { addParticipation, getAlly, listAllies, loadAlliesListing, saveAllyCapabilities, saveAllyRup, updateAlly } from '../verticales/licitaciones/tender-allies.js';
+import { saveAndReadAllyWebsite } from '../verticales/licitaciones/aliados-pagina-web.js';
 import { buildAllyBoard, buildProcessParticipantsBoard } from '../verticales/licitaciones/tender-allies-board.js';
 import { presentExperiencePlan, proposeExperiencePlan } from '../verticales/licitaciones/tender-experience-plan.js';
 import { VIGILANCE_LISTING, VIGILANCE_LISTING_SOURCE } from '../data/aliados/listado-supervigilancia-2026-11-07.js';
@@ -601,6 +602,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/tender-allies/rup-upload-url': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
   'POST /api/tender-allies/rup': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
   'POST /api/tender-allies/capabilities': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
+  'POST /api/tender-allies/website': ['tenders', ACTIONS.LICITACIONES_GO_NO_GO_APPROVE],
   'GET /api/tender-allies/candidates': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'GET /api/tender-allies/company': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'GET /api/tender-experience-plan': ['tenders', ACTIONS.LICITACIONES_VIEW],
@@ -9450,6 +9452,18 @@ app.post('/api/tender-allies/capabilities', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
     res.json(await saveAllyCapabilities(requireDb(), { actorId: currentProfile.id, nit: req.body?.nit, body: req.body || {} }));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// La página web del aliado (Juan, 2026-11-26; migración 240): se guarda la dirección y Vig-IA la lee de una vez; lo leído
+// queda en la ficha sin aprobación. «read: false» sólo guarda la dirección. Si la lectura falla, la dirección queda y el
+// error se ve en la ficha para volver a pedirlo.
+app.post('/api/tender-allies/website', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
+    const body = req.body || {};
+    res.json(await saveAndReadAllyWebsite(requireDb(), { actorId: currentProfile.id, nit: body.nit, website: body.website, read: body.read !== false }));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 

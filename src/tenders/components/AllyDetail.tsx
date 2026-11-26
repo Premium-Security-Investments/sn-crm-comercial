@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { TenderRequest } from '../types';
 import { AllyRupPanel, type RupField } from './AllyRupPanel';
+import { AllyWebsitePanel, type WebsiteFields } from './AllyWebsitePanel';
 
 /**
  * La ficha de una empresa de Aliados: datos del listado, procesos donde la vimos y «Nuestra relación con la empresa».
@@ -10,7 +11,7 @@ import { AllyRupPanel, type RupField } from './AllyRupPanel';
  */
 export type City = { city: string; city_key: string; department: string | null };
 export type Participation = { id: string; nit: string | null; company_label: string; entity: string | null; process_ref: string; kind: string; detail: string | null; source: string | null; occurred_on: string | null };
-export type Company = { nit: string; dv: string | null; name: string; acronyms: string | null; representative: string | null; phone: string | null; email: string | null; license_resolution: string | null; listing_source?: string | null; role: string; contact: string | null; contact_name?: string | null; contact_title?: string | null; contact_phone?: string | null; contact_email?: string | null; notes: string | null; cities: City[]; participations: Participation[]; rup?: RupField; radio_cities?: string | null; radio_source?: string | null; sgsst_pct?: number | null; sgsst_date?: string | null };
+export type Company = { nit: string; dv: string | null; name: string; acronyms: string | null; representative: string | null; phone: string | null; email: string | null; license_resolution: string | null; listing_source?: string | null; role: string; contact: string | null; contact_name?: string | null; contact_title?: string | null; contact_phone?: string | null; contact_email?: string | null; notes: string | null; cities: City[]; participations: Participation[]; rup?: RupField; radio_cities?: string | null; radio_source?: string | null; sgsst_pct?: number | null; sgsst_date?: string | null } & WebsiteFields;
 
 export const ROLES: Array<[string, string]> = [['sin_clasificar', 'Sin clasificar'], ['aliado_potencial', 'Aliado potencial'], ['aliado', 'Aliado'], ['competidor', 'Competidor'], ['descartado', 'Descartado'], ['nosotros', 'Nosotros']];
 export const KINDS: Array<[string, string]> = [['oferto', 'Ofertó'], ['observo_proyecto', 'Observó el proyecto'], ['observo_definitivo', 'Observó el definitivo'], ['adjudicatario', 'Adjudicatario'], ['contratista_actual', 'Contratista actual'], ['otro', 'Otro']];
@@ -78,6 +79,7 @@ export function AllyDetail({ company, canEdit, request, onSaved }: { company: Co
                   <div className="wide tender-allies-notes"><label>Notas<textarea value={draft.notes} onChange={event => setDraft({ ...draft, notes: event.target.value })} maxLength={4000} rows={2} /></label><button type="submit" disabled={busy}>Guardar</button></div>
                 </form>}
                 </div>}
+                <AllyWebsitePanel nit={company.nit} fields={{ website: company.website, website_info: company.website_info, website_read_at: company.website_read_at, website_read_error: company.website_read_error }} canEdit={canEdit} request={request} onSaved={onSaved} />
                 <AllyRupPanel nit={company.nit} rup={company.rup} capabilities={{ radio_cities: company.radio_cities, radio_source: company.radio_source, sgsst_pct: company.sgsst_pct, sgsst_date: company.sgsst_date }} canEdit={canEdit} request={request} onSaved={onSaved} />
               </div>
   </>;
