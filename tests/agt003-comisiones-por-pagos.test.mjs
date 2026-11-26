@@ -9,7 +9,9 @@ import { crearLectorAvancys } from '../avancys-odoo-lectura.js';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const SMLMV = 1_000_000;
-const factura = (extra = {}) => ({ cliente_id: 10, cliente: 'Cliente Diez', comercial_id: 5, comercial: 'Comercial Cinco', sin_iva: 1_000_000, total: 1_019_000, tipo: 'out_invoice', fecha: '2026-10-05', diario: '1 - FACTURA ELECTRONICA DE VENTA SERVICIOS', ...extra });
+// Regla base 2026: la vigilancia cuenta 12 meses desde la firma; estas facturas son de un contrato firmado en 2026-03.
+const INICIO = { 900100: '2026-03-01' };
+const factura = (extra = {}) => ({ cliente_id: 10, cliente: 'Cliente Diez', nit: '900100', pendiente: 0, comercial_id: 5, comercial: 'Comercial Cinco', sin_iva: 1_000_000, total: 1_019_000, tipo: 'out_invoice', fecha: '2026-10-05', diario: '1 - FACTURA ELECTRONICA DE VENTA SERVICIOS', ...extra });
 
 test('tabla plana por salarios mínimos: un solo porcentaje según el tramo', () => {
   assert.equal(porcentajeVigilancia(10), 0.007);
@@ -33,7 +35,7 @@ test('pago total y pago parcial: cuenta la parte pagada, antes de IVA, con el po
     ],
     facturas: { SN100001: factura(), SN100002: factura({ fecha: '2026-10-20' }) },
     servicioMensual: { '10|2026-10': 2_000_000 }, // 2 salarios mínimos: tramo de 0,70 %
-    salarioMinimoDe: () => SMLMV,
+    salarioMinimoDe: () => SMLMV, mes: '2026-11', inicioContrato: INICIO,
   });
   assert.equal(r.comerciales.length, 1);
   const c = r.comerciales[0];
@@ -50,33 +52,78 @@ test('el porcentaje sale de lo facturado al cliente en el mes de la factura', ()
     recaudos: [{ id: 1, fecha: '2026-11-03', valor: 1_019_000, texto: 'SN100001' }],
     facturas: { SN100001: factura() },
     servicioMensual: { '10|2026-10': 150_000_000 }, // 150 salarios: 0,42 %
-    salarioMinimoDe: () => SMLMV,
+    salarioMinimoDe: () => SMLMV, mes: '2026-11', inicioContrato: INICIO,
   });
   assert.equal(r.comerciales[0].pagos[0].porcentaje, 0.0042);
 });
 
-test('monitoreo y comercialización sin comisión; saldos viejos aparte; lo dudoso a revisar con cartera', () => {
+test('saldos viejos aparte; lo dudoso a revisar con cartera', () => {
   const r = calcularComisiones({
     recaudos: [
-      { id: 1, fecha: '2026-11-03', valor: 119_000, texto: 'SN200001' },
-      { id: 2, fecha: '2026-11-03', valor: 119_000, texto: 'SN200002' },
       { id: 3, fecha: '2026-11-04', valor: 50_000, texto: 'AV9 - SBI/2026/07/0004' },
       { id: 4, fecha: '2026-11-05', valor: 70_000, texto: 'pago sin referencia' },
       { id: 5, fecha: '2026-11-05', valor: 70_000, texto: 'SN100001 SN100002' },
       { id: 6, fecha: '2026-11-06', valor: 9_000_000, texto: 'SN100001' },
     ],
-    facturas: {
-      SN200001: factura({ sin_iva: 100_000, total: 119_000, diario: '2 - FACTURA ELECTRONICA DE VENTA MONITOREO' }),
-      SN200002: factura({ sin_iva: 100_000, total: 119_000, diario: '3 - FACTURA ELECTRONICA DE VENTA COMERCIALIZACION' }),
-      SN100001: factura(), SN100002: factura(),
-    },
+    facturas: { SN100001: factura(), SN100002: factura() },
     servicioMensual: { '10|2026-10': 2_000_000 },
-    salarioMinimoDe: () => SMLMV,
+    salarioMinimoDe: () => SMLMV, mes: '2026-11', inicioContrato: INICIO,
   });
   assert.equal(r.comerciales.length, 0);
-  assert.deepEqual(r.sin_regla, { monitoreo: 100_000, comercializacion: 100_000, otra: 0 });
   assert.equal(r.saldos_anteriores, 50_000);
   assert.deepEqual(r.revisar.map(x => x.motivo), ['No nombra una factura conocida.', 'Nombra varias facturas: no se sabe cuánto va a cada una.', 'El abono es mayor que la factura SN100001.']);
+});
+
+// Regla base 2026 (Juan, 2026-11-26).
+test('vigilancia sólo 12 meses desde la firma; sin fecha no se cuenta; cliente nuevo de Avancys toma su primer servicio', () => {
+  const base = { servicioMensual: { '10|2026-10': 2_000_000, '11|2026-10': 2_000_000, '12|2026-10': 2_000_000 }, salarioMinimoDe: () => SMLMV, mes: '2026-11' };
+  const r = calcularComisiones({ ...base,
+    recaudos: [
+      { id: 1, fecha: '2026-11-03', valor: 1_019_000, texto: 'SN300001' }, // firmado 2025-08: fuera de 12 meses
+      { id: 2, fecha: '2026-11-03', valor: 1_019_000, texto: 'SN300002' }, // sin archivo y ya estaba al arrancar Avancys
+      { id: 3, fecha: '2026-11-03', valor: 1_019_000, texto: 'SN300003' }, // entró en octubre de 2026: primer servicio
+    ],
+    facturas: { SN300001: factura({ nit: '1' }), SN300002: factura({ nit: '2', cliente_id: 11 }), SN300003: factura({ nit: '3', cliente_id: 12 }) },
+    inicioContrato: { 1: '2025-08-01' },
+    primerServicio: { 11: '2026-08-01', 12: '2026-10-01' },
+  });
+  assert.equal(r.fuera_de_12_meses.abonos, 1);
+  assert.equal(r.sin_fecha_contrato.abonos, 1);
+  assert.equal(r.comerciales[0].pagos.length, 1);
+  assert.equal(r.comerciales[0].pagos[0].inicio_contrato, '2026-10-01');
+});
+
+test('tablas: licitaciones y clientes de la tabla de Juan Carlos Martínez', () => {
+  const comun = { servicioMensual: { '10|2026-10': 2_000_000 }, salarioMinimoDe: () => SMLMV, mes: '2026-11', inicioContrato: INICIO,
+    recaudos: [{ id: 1, fecha: '2026-11-03', valor: 1_019_000, texto: 'SN100001' }], facturas: { SN100001: factura() } };
+  assert.equal(calcularComisiones({ ...comun, nitsTablaMitad: new Set(['900100']) }).comerciales[0].pagos[0].porcentaje, 0.0035);
+  assert.equal(calcularComisiones({ ...comun, comercialesLicitaciones: new Set([5]) }).comerciales[0].pagos[0].porcentaje, 0.0056);
+});
+
+test('equipos una vez al quedar pagada, por tramos; monitoreo un paquete con la primera factura de un cliente nuevo', () => {
+  const r = calcularComisiones({
+    recaudos: [
+      { id: 1, fecha: '2026-11-03', valor: 595_000, texto: 'SN200002' },
+      { id: 2, fecha: '2026-11-04', valor: 595_000, texto: 'SN200002' }, // dos abonos, una sola comisión
+      { id: 3, fecha: '2026-11-03', valor: 119_000, texto: 'SN200001' },
+      { id: 4, fecha: '2026-11-03', valor: 119_000, texto: 'SN200009' }, // segunda factura de monitoreo: no
+    ],
+    facturas: {
+      SN200002: factura({ sin_iva: 1_000_000, total: 1_190_000, diario: '3 - FACTURA ELECTRONICA DE VENTA COMERCIALIZACION' }),
+      SN200001: factura({ cliente_id: 20, sin_iva: 100_000, total: 119_000, fecha: '2026-10-01', diario: '2 - FACTURA ELECTRONICA DE VENTA MONITOREO' }),
+      SN200009: factura({ cliente_id: 20, sin_iva: 100_000, total: 119_000, fecha: '2026-11-01', diario: '2 - FACTURA ELECTRONICA DE VENTA MONITOREO' }),
+    },
+    salarioMinimoDe: () => SMLMV, mes: '2026-11',
+    ultimoAbono: { SN200002: '2026-11-04' },
+    primeraMonitoreo: { 20: '2026-10-01' },
+  });
+  const c = r.comerciales[0];
+  assert.equal(c.equipos.length, 1);
+  assert.equal(c.equipos[0].porcentaje, 0.05, '1 salario mínimo: tramo de 5 %');
+  assert.equal(c.comision_equipos, 50_000);
+  assert.equal(c.monitoreo.length, 1);
+  assert.equal(c.comision_monitoreo, 100_000);
+  assert.equal(c.total, 150_000);
 });
 
 test('lector: abonos a cartera por código de cuenta y diarios de banco, caja y cruces; el comercial es el del cliente', async () => {

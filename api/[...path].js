@@ -91,7 +91,7 @@ import { isAgt003CommercialOpportunity } from '../src/vigia/commercial-scope.js'
 import { DEFAULT_GUARD_RATES, DEFAULT_TECH_RATES, normalizeGuardRates, normalizeTechRates, quoteTotals, ratesInEffect } from '../src/vigia/quote-engine.js';
 import { GUARD_OPPORTUNITY_TYPE, TECH_OPPORTUNITY_TYPE, opportunityValuesFromQuote } from '../src/vigia/quote-proposal.js';
 import { calcularComisiones } from '../src/vigia/comisiones.js';
-import { contratosDeClientes, resumenContratos } from '../src/vigia/contratos-clientes.js';
+import { contratosDeClientes, inicioDeComision, resumenContratos } from '../src/vigia/contratos-clientes.js';
 import { CLIENT_DEAL_FIELD, CLIENT_PROFILE_FIELDS, hasClientProfileFields, normalizeClientDeal, normalizeClientProfile, profileCompleteness } from '../src/vigia/client-profile.js';
 import { LEAD_ANALYSIS_CONTRACT_VERSION, bogotaMonthStartIso, monthlyMaxFrom } from '../src/vigia/lead-analysis.js';
 import { AGT003_MODEL_FAILURE, agt003ModelFailureMessage, classifyAgt003ModelFailure } from '../src/vigia/model-failures.js';
@@ -5482,8 +5482,22 @@ app.get('/api/agt003/avancys/comisiones', async (req, res) => {
     const leido = await lector.pagosDelMes({ mes });
     const filasTarifa = (await readQuoteRates(database) || []).filter(row => row.kind === 'vigilancia');
     const salarioMinimoDe = dia => normalizeGuardRates(ratesInEffect(filasTarifa, String(dia || '').slice(0, 10))?.params || DEFAULT_GUARD_RATES).smlmv;
-    const calculo = calcularComisiones({ recaudos: leido.recaudos, facturas: leido.facturas, servicioMensual: leido.servicioMensual, salarioMinimoDe });
-    const respuesta = { mes, ...calculo, recaudos: leido.recaudos.length, recortado: leido.recortado, as_of: leido.as_of, motivo: null, medido_en: new Date().toISOString() };
+    // Regla base 2026: la firma del contrato (archivo de contratos, migración 238), la lista de la tabla de Juan Carlos
+    // Martínez (migración 239) y quién cobra con la tabla de licitaciones (su perfil del CRM es de licitaciones). Sin
+    // alguna de las tablas, el cálculo sigue y lo que falta se dice.
+    const tolerante = async consulta => { const { data, error } = await consulta; if (error && error.code !== '42P01') throw error; return data || []; };
+    const contratos = await tolerante(database.from('psi_client_contracts').select('nit,fecha_inicio,fecha_ultima_renovacion'));
+    const mitad = await tolerante(database.from('psi_commission_half_table_clients').select('nit'));
+    const equivalencias = await tolerante(database.from('psi_avancys_salesperson_map').select('odoo_user_id,profile_id'));
+    const perfilesLicitaciones = new Set((await tolerante(database.from('psi_sales_profiles').select('id,commercial_area').eq('commercial_area', 'licitacion_publica'))).map(fila => fila.id));
+    const calculo = calcularComisiones({
+      recaudos: leido.recaudos, facturas: leido.facturas, servicioMensual: leido.servicioMensual, salarioMinimoDe, mes,
+      inicioContrato: Object.fromEntries(contratos.map(fila => [fila.nit, inicioDeComision(fila)]).filter(([, inicio]) => inicio)),
+      primerServicio: leido.primerServicio || {}, primeraMonitoreo: leido.primeraMonitoreo || {}, ultimoAbono: leido.ultimoAbono || {},
+      nitsTablaMitad: new Set(mitad.map(fila => fila.nit)),
+      comercialesLicitaciones: new Set(equivalencias.filter(fila => perfilesLicitaciones.has(fila.profile_id)).map(fila => fila.odoo_user_id)),
+    });
+    const respuesta = { mes, ...calculo, tabla_mitad_cargada: mitad.length, contratos_cargados: contratos.length, recaudos: leido.recaudos.length, recortado: leido.recortado, as_of: leido.as_of, motivo: null, medido_en: new Date().toISOString() };
     await guardarTorre(database, `comisiones:${mes}`, respuesta);
     return res.json(respuesta);
   } catch (error) {
