@@ -142,6 +142,7 @@ import { evaluateTenderFit } from '../verticales/licitaciones/tender-fit-policy.
 import { assertPublicActuationType, PUBLIC_ACTUATION_TYPES } from '../verticales/licitaciones/tender-actuation-types.js';
 import { buildAgt002AnalysisConfig } from '../verticales/licitaciones/agt002-analysis-config.js';
 import { firebaseLoginProjectId, isFirebaseIdTokenFor, verifyFirebaseIdToken } from '../verticales/acceso/sesion-firebase.js';
+import { createDirectorioCuentas, loginDirectorioActivo } from '../verticales/acceso/directorio-cuentas.js';
 import { getAgt002VercelControlPlaneIdentity } from '../verticales/licitaciones/agt002-vercel-control-plane-identity.js';
 import { createAgt002AnalysisObservability } from '../verticales/licitaciones/agt002-analysis-observability.js';
 import { runAgt002PostBridgeAnalysis } from '../verticales/licitaciones/agt002-post-bridge-observability.js';
@@ -6222,7 +6223,8 @@ app.get('/api/acceso/securityops', (_req, res) => {
   const projectId = firebaseLoginProjectId(process.env);
   const apiKey = typeof process.env.SIIO_FIREBASE_LOGIN_API_KEY === 'string' ? process.env.SIIO_FIREBASE_LOGIN_API_KEY.trim() : '';
   res.set('Cache-Control', 'no-store');
-  res.json(projectId && apiKey ? { enabled: true, projectId, apiKey } : { enabled: false });
+  // modo «directorio» = cambio definitivo (la entrada normal usa el directorio común); «ensayo» = enlace aparte.
+  res.json(projectId && apiKey ? { enabled: true, projectId, apiKey, modo: loginDirectorioActivo(process.env) ? 'directorio' : 'ensayo' } : { enabled: false });
 });
 app.get('/api/bootstrap', async (req, res) => {
   try {
@@ -10389,7 +10391,36 @@ async function confirmAuthUserIfNeeded(database, user) {
   return data?.user || user;
 }
 
+// Cambio definitivo del inicio de sesión (SIIO_LOGIN_DIRECTORIO=on): la cuenta vive en el directorio común. Se crea o se
+// reconoce por correo; nunca se borra ni se desactiva desde el SIIO (desactivar en el SIIO quita solo el SIIO). El acceso
+// se entrega con el correo de Google para poner la clave; si no sale, con el enlace para compartirlo a mano.
+export async function ensureProfileDirectoryAfterCommit({ email, nombre, password, active, sendInvite, req, directorio = null }) {
+  const result = { invited: false, accessLink: null, authWarning: null };
+  if (!active || (!sendInvite && !password)) return result;
+  try {
+    const cuentas = directorio || createDirectorioCuentas({ projectId: firebaseLoginProjectId(process.env) });
+    const cuenta = await cuentas.asegurar({ email, nombre, clave: password });
+    if (cuenta.disabled) {
+      result.authWarning = 'La cuenta de esta persona está cerrada en el directorio común. Ábrala allí antes de darle acceso al SIIO.';
+      return result;
+    }
+    const continueUrl = getPublicAppUrl(req);
+    if (sendInvite || (password && !cuenta.creada)) {
+      try { result.invited = await cuentas.enviarCorreoDeClave(email, continueUrl); }
+      catch (error) { console.error('directorio_correo_de_clave_fallo', { code: error?.code }); }
+    }
+    if (sendInvite && !result.invited) result.accessLink = await cuentas.enlaceDeClave(email, continueUrl).catch(() => null);
+  } catch (error) {
+    console.error('directorio_aprovisionamiento_fallo', { code: error?.code });
+    result.authWarning = 'El perfil quedó guardado, pero la cuenta del directorio común no pudo prepararse. Reintente el envío desde Usuarios y permisos.';
+  }
+  return result;
+}
+
 export async function ensureProfileAuthAfterCommit(database, { targetProfileId, email, password, userMetadata, active, sendInvite, req }) {
+  if (loginDirectorioActivo(process.env)) {
+    return ensureProfileDirectoryAfterCommit({ email, nombre: userMetadata?.full_name, password, active, sendInvite, req });
+  }
   const result = { invited: false, accessLink: null, authWarning: null };
   if (!active || (!sendInvite && !password)) return result;
   try {

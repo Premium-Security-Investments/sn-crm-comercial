@@ -3,7 +3,8 @@
 // La sesión vive solo en esta pestaña (sessionStorage) y el token se renueva antes de vencer (dura 1 hora).
 
 export type SesionSecurityOps = { idToken: string; refreshToken: string; email: string; venceEn: number };
-type Config = { enabled: true; projectId: string; apiKey: string } | { enabled: false };
+// modo «ensayo»: enlace aparte en la pantalla; «directorio»: cambio definitivo, la entrada normal usa el directorio.
+type Config = { enabled: true; projectId: string; apiKey: string; modo?: 'ensayo' | 'directorio' } | { enabled: false };
 
 const CLAVE = 'siio.sesion.securityops';
 const MARGEN_MS = 5 * 60 * 1000;
@@ -105,6 +106,24 @@ export async function retomarSesion(): Promise<SesionSecurityOps | null> {
   }
   guardar(sesion);
   return sesion;
+}
+
+/** «¿Olvidaste tu contraseña?» contra el directorio: Google manda el correo (en español) para poner una clave nueva. */
+export async function enviarCorreoDeClave(email: string): Promise<void> {
+  const cfg = await configSecurityOps();
+  if (!cfg.enabled) throw new Error('La recuperación de clave no está disponible aquí.');
+  const res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${encodeURIComponent(cfg.apiKey)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Firebase-Locale': 'es' },
+    body: JSON.stringify({ requestType: 'PASSWORD_RESET', email, continueUrl: window.location.origin }),
+  });
+  // Por seguridad no se distingue si el correo existe: la respuesta es la misma.
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const codigo = String(body?.error?.message || '').split(' ')[0];
+    if (codigo === 'TOO_MANY_ATTEMPTS_TRY_LATER') throw new Error(MENSAJES[codigo]);
+    if (codigo !== 'EMAIL_NOT_FOUND') throw new Error('No fue posible enviar el correo. Intenta de nuevo.');
+  }
 }
 
 export function salirDeSecurityOps() {
