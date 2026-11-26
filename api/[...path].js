@@ -6213,6 +6213,15 @@ export function touchProfileLastSeen(database, profileId, now = new Date()) {
 }
 export function __resetLastSeenTouchesForTests() { lastSeenTouchedDayByProfile.clear(); }
 
+// Inicio de sesión común (ensayo, 26-nov): la pantalla de entrada pregunta si puede ofrecer «Entrar con la cuenta de
+// SecurityOps». Solo responde habilitado donde están las dos variables (Cloud Run); en Vercel responde apagado.
+// La llave es la llave pública de navegador de Firebase de SecurityOps (restringida por dirección y por API).
+app.get('/api/acceso/securityops', (_req, res) => {
+  const projectId = firebaseLoginProjectId(process.env);
+  const apiKey = typeof process.env.SIIO_FIREBASE_LOGIN_API_KEY === 'string' ? process.env.SIIO_FIREBASE_LOGIN_API_KEY.trim() : '';
+  res.set('Cache-Control', 'no-store');
+  res.json(projectId && apiKey ? { enabled: true, projectId, apiKey } : { enabled: false });
+});
 app.get('/api/bootstrap', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
