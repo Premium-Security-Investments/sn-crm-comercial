@@ -39,7 +39,7 @@ const EDITABLE = new Set(['doc', 'docx', 'xls', 'xlsx', 'odt', 'ods', 'zip']);
 const VERSION_WORDS = new Set(['definitivo', 'definitiva', 'definitivos', 'definitivas', 'final', 'vf', 'consolidado', 'consolidada',
   'actualizado', 'actualizada', 'ajustado', 'ajustada', 'modificado', 'modificada', 'nuevo', 'nueva', 'version', 'limpio', 'en',
   'firmado', 'firmada', 'suscrito', 'suscrita', 'rev', 'adenda', 'no', 'n', 'nro', 'lp', 'sa', 'cm', 'proceso', 'vigilancia',
-  'seguridad', 'privada', 'de', 'del', 'la', 'el', 'los', 'las', 'y', 'para', 'al', 'a', 'con', 'incluye']);
+  'seguridad', 'privada', 'de', 'del', 'la', 'el', 'los', 'las', 'y', 'para', 'al', 'a', 'con', 'incluye', 'rep', 'republicacion']);
 
 // «INCLUYE ADENDA …» / «… con adenda incorporada»: la Entidad publica el mismo documento con la adenda ya aplicada.
 const INCORPORATED_ADENDA = /\b(incluye adendas?|con adendas? incorporadas?|adendas? incorporadas?)\b/;
@@ -51,7 +51,8 @@ export function isIncorporatedAdendaVersion(name) {
 // Versión ajustada (DEAJ LP-07-2026, 2026-11-25): la Entidad republica «Pliego … Ajustado LP-07-2026 23112026.pdf»,
 // «Anexo ANS … Ajustado 23112026.pdf» o «Estudio de Mercado … - ajustado adenda.xlsx» sin decir «incluye adenda», y los
 // del 11-nov quedaban vigentes al lado. Marca de versión: ajustado, corregido, actualizado, adenda, o una fecha en el nombre.
-const REVISION_MARK = /\b(ajustad[oa]s?|corregid[oa]s?|actualizad[oa]s?|adendas?|incluye adendas?)\b/;
+// «BRN_REP_…» / «republicación»: la Bolsa republica el mismo boletín con otra fecha de rueda (Medicina Legal, 25-nov).
+const REVISION_MARK = /\b(ajustad[oa]s?|corregid[oa]s?|actualizad[oa]s?|adendas?|incluye adendas?|rep|republicacion)\b/;
 /** Fecha escrita en el nombre («23112026», «11-11-26», «FINAL11-11-2026», «11.11.26») como AAAA-MM-DD, o null. */
 export function dateInDocumentName(name) {
   const text = String(name || '').toLowerCase();
@@ -89,7 +90,11 @@ function leadingItemNumber(name) {
 }
 function differentItemNumbers(a, b) {
   const left = leadingItemNumber(a); const right = leadingItemNumber(b);
-  return left !== null && right !== null && left !== right;
+  if (left !== null && right !== null && left !== right) return true;
+  // Números de tres cifras que identifican el documento («B.R.N. 201» frente a «B.R.N. 202», Medicina Legal 25-nov):
+  // distintos son documentos distintos aunque el resto del nombre sea igual.
+  const ids = name => [...String(name || '').matchAll(/(?:^|[^\d])(\d{3})(?!\d)/g)].map(m => m[1]).sort().join(',');
+  return ids(a) !== ids(b);
 }
 const sharedWords = (a, b) => { const right = new Set(String(b || '').split(' ').filter(word => word.length > 1)); return String(a || '').split(' ').filter(word => word.length > 1 && right.has(word)).length; };
 /** Lo que le sobra al nombre del vigente no identifica otro documento («presupuesto oficial» sí lo identifica: Cali). */
@@ -205,6 +210,19 @@ export function planObsoleteTenderDocuments({ currentNames = [], incomingNames =
         && (doc.family === family || (sameExtension(doc.name, name) && familyContains(family, doc.family))));
       if (definitive && (kind === 'protected' || kind === 'other' || definitive.family !== family)) {
         archive.push({ name, reason: 'version_definitiva', replacedBy: definitive.name });
+        continue;
+      }
+    }
+    // Misma «definitiva» con fecha posterior (Medicina Legal, 25-nov: «FTN VIGILANCIA DEFINITIVA 19-11-2026» frente a
+    // «… 25-11-2026»). La familia queda en una sola palabra («ftn») y la regla de familia fuerte no la ve: basta con que
+    // las dos digan «definitiva», tengan la misma familia, sean el mismo tipo de archivo y la nueva traiga fecha posterior.
+    if (kind !== 'protected' && family && DEFINITIVE.test(plain)) {
+      const currentDate = dateInDocumentName(name);
+      const later = currentDate && incoming.find(doc => DEFINITIVE.test(normalize(doc.name)) && doc.family === family
+        && sameFileGroup(doc.name, name) && !differentItemNumbers(doc.name, name)
+        && dateInDocumentName(doc.name) && dateInDocumentName(doc.name) > currentDate);
+      if (later) {
+        archive.push({ name, reason: 'definitiva_posterior', replacedBy: later.name });
         continue;
       }
     }
