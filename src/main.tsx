@@ -29,7 +29,7 @@ import { TenderVigiaChannel } from './tenders/workspace/TenderVigiaChannel';
 import { TenderOwnDocuments } from './tenders/workspace/TenderOwnDocuments';
 import { TenderMiDia, type TenderMiDiaResumen } from './tenders/components/TenderMiDia';
 import { classifyOpportunityStage } from './tenders/opportunityStage';
-import { alCambiarSesion, configSecurityOps, entrarConSecurityOps, retomarSesion, salirDeSecurityOps, sesionGuardada, type SesionSecurityOps } from './accesoSecurityOps';
+import { alCambiarSesion, configSecurityOps, entrarConSecurityOps, enviarCorreoDeClave, retomarSesion, salirDeSecurityOps, sesionGuardada, type SesionSecurityOps } from './accesoSecurityOps';
 import { VigiaDock } from './vigia/VigiaDock';
 import { TenderMyDayOfferReminder } from './tenders/components/TenderMyDayOfferReminder';
 import { TenderCompanyDocumentBridgePanel } from './tenders/components/TenderCompanyDocumentBridgePanel';
@@ -586,9 +586,12 @@ function LoginScreen(_props: { siioMode?: boolean }) {
   const [aviso, setAviso] = useState<{ tipo: 'error' | 'info'; texto: string } | null>(null);
   const [ingresando, setIngresando] = useState(false);
   // Ensayo del inicio de sesión común: solo aparece donde el servidor lo habilita (Google, no Vercel).
-  const [conSecurityOps, setConSecurityOps] = useState(false);
+  const [eleccionSecurityOps, setConSecurityOps] = useState(false);
   const [securityOpsDisponible, setSecurityOpsDisponible] = useState(false);
-  useEffect(() => { void configSecurityOps().then(cfg => setSecurityOpsDisponible(cfg.enabled)); }, []);
+  // Cambio definitivo: con modo «directorio» el formulario normal ya es el del directorio común y no hay enlace aparte.
+  const [modoDirectorio, setModoDirectorio] = useState(false);
+  useEffect(() => { void configSecurityOps().then(cfg => { setSecurityOpsDisponible(cfg.enabled); setModoDirectorio(cfg.enabled && cfg.modo === 'directorio'); }); }, []);
+  const conSecurityOps = modoDirectorio || eleccionSecurityOps;
   const normalizedEmail = email.trim().toLowerCase();
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -607,17 +610,22 @@ function LoginScreen(_props: { siioMode?: boolean }) {
   const resetPassword = async () => {
     if (!normalizedEmail) { setAviso({ tipo: 'info', texto: 'Escribe tu correo electrónico para enviarte el enlace de recuperación.' }); return; }
     setAviso({ tipo: 'info', texto: 'Enviando recuperación…' });
+    if (modoDirectorio) {
+      try { await enviarCorreoDeClave(normalizedEmail); setAviso({ tipo: 'info', texto: 'Si el correo tiene cuenta, te llegará un enlace para poner una clave nueva. Revisa tu correo.' }); }
+      catch (error) { setAviso({ tipo: 'error', texto: error instanceof Error ? error.message : String(error) }); }
+      return;
+    }
     const { error } = await supabaseBrowser.auth.resetPasswordForEmail(normalizedEmail, { redirectTo: window.location.origin });
     setAviso(error ? { tipo: 'error', texto: error.message } : { tipo: 'info', texto: 'Te enviamos un enlace para restablecer la clave. Revisa tu correo.' });
   };
-  return <IngresoMarca titulo="Iniciar sesión" subtitulo={conSecurityOps ? 'Con tu correo y la clave de SecurityOps.' : 'Ingresa tus credenciales para continuar.'}>
+  return <IngresoMarca titulo="Iniciar sesión" subtitulo={conSecurityOps && !modoDirectorio ? 'Con tu correo y la clave de SecurityOps.' : 'Ingresa tus credenciales para continuar.'}>
     <form onSubmit={submit}>
       {aviso && <AvisoIngreso tipo={aviso.tipo}>{aviso.texto}</AvisoIngreso>}
       <label>Correo electrónico<span className="sn-ingreso-campo"><Mail aria-hidden="true" /><input type="email" required autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} placeholder="usuario@seguridadnacional.co" /></span></label>
       <label>Contraseña<span className="sn-ingreso-campo"><Lock aria-hidden="true" /><input type="password" required autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" /></span></label>
-      {!conSecurityOps && <button type="button" className="sn-ingreso-olvido" onClick={resetPassword}>¿Olvidaste tu contraseña?</button>}
+      {(!conSecurityOps || modoDirectorio) && <button type="button" className="sn-ingreso-olvido" onClick={resetPassword}>¿Olvidaste tu contraseña?</button>}
       <button className="sn-ingreso-entrar" disabled={ingresando}>{ingresando ? 'Verificando…' : <>Acceder al sistema<ChevronRight aria-hidden="true" /></>}</button>
-      {securityOpsDisponible && <button type="button" className="sn-ingreso-olvido" onClick={() => { setConSecurityOps(on => !on); setAviso(null); }}>
+      {securityOpsDisponible && !modoDirectorio && <button type="button" className="sn-ingreso-olvido" onClick={() => { setConSecurityOps(on => !on); setAviso(null); }}>
         {conSecurityOps ? 'Entrar con la clave del SIIO' : 'Entrar con la cuenta de SecurityOps'}
       </button>}
     </form>
