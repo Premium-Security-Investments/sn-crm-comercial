@@ -27,7 +27,7 @@ const CAMPOS = Object.freeze({
   cliente: Object.freeze(['id', 'name', 'ref_num', 'ref_type_id', 'verification_code', 'is_company', 'user_id', 'state_id', 'write_date']),
   // Comisiones por pagos recibidos (Juan, 2026-11-25): los abonos a cartera del mes y las facturas que nombran.
   recaudo: Object.freeze(['id', 'date', 'name', 'ref', 'credit', 'journal_id', 'write_date']),
-  facturaComision: Object.freeze(['id', 'name', 'partner_id', 'amount_untaxed', 'amount_total', 'move_type', 'invoice_date', 'journal_id', 'write_date']),
+  facturaComision: Object.freeze(['id', 'name', 'partner_id', 'amount_untaxed', 'amount_total', 'amount_residual', 'move_type', 'invoice_date', 'journal_id', 'write_date']),
 });
 
 const MODELO = Object.freeze({
@@ -609,6 +609,22 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
     return Object.freeze(salida);
   }
 
+  // Agrupación con mínimo de una fecha, para no traer miles de filas (primer servicio, primera factura de monitoreo).
+  async function minimoPorCliente(clave, dominio, campoCliente, campoFecha) {
+    const id = await autenticar();
+    const nombrado = { lazy: false, limit: 20000 };
+    if (config.companyId) nombrado.context = { allowed_company_ids: [config.companyId] };
+    const grupos = await rpc('object', 'execute_kw', [config.database, id, config.clave, MODELO[clave], 'read_group',
+      [dominio, [`${campoFecha}:min`], [campoCliente]], nombrado]);
+    if (!Array.isArray(grupos)) falla('AVANCYS_RESPUESTA_INVALIDA');
+    const salida = {};
+    for (const g of grupos) {
+      const cliente = unoAMuchos(g[campoCliente]);
+      if (cliente !== null && g[campoFecha]) salida[cliente] = String(g[campoFecha]).slice(0, 10);
+    }
+    return salida;
+  }
+
   /**
    * Lo que entró a cartera en un mes y las facturas que paga (comisiones; Juan, 2026-11-25: «se les paga por lo que ya
    * haya pagado el cliente; si paga parcial se le paga parcial»).
@@ -643,9 +659,13 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
     // El comercial que cuenta es el asignado al cliente, no quien hizo la factura (igual que el cobro por comercial).
     const idsCliente = [...new Set(facturasLeidas.map(f => unoAMuchos(f.partner_id)).filter(id => id !== null))];
     const comercialDelCliente = new Map();
+    const nitDelCliente = new Map();
     for (let i = 0; i < idsCliente.length; i += 500) {
       const lote = idsCliente.slice(i, i + 500);
-      for (const cliente of await leer('cliente', [['id', 'in', lote]], { limite: lote.length })) comercialDelCliente.set(cliente.id, cliente.user_id || false);
+      for (const cliente of await leer('cliente', [['id', 'in', lote]], { limite: lote.length })) {
+        comercialDelCliente.set(cliente.id, cliente.user_id || false);
+        nitDelCliente.set(cliente.id, normalizarIdentificacion(cliente.ref_num));
+      }
     }
 
     const facturas = {};
@@ -662,8 +682,10 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
         cliente: Array.isArray(f.partner_id) ? (texto(f.partner_id[1]) || '').replace(/^\[[^\]]*\]\s*/, '') : null,
         comercial_id: unoAMuchos(asignado),
         comercial: Array.isArray(asignado) ? texto(asignado[1]) : null,
+        nit: nitDelCliente.get(clienteId) || null,
         sin_iva: Number(f.amount_untaxed) || 0,
         total: Number(f.amount_total) || 0,
+        pendiente: Number(f.amount_residual) || 0,
         tipo: f.move_type,
         fecha: f.invoice_date || null,
         diario,
@@ -696,8 +718,39 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
       }
     }
 
+    // Regla base 2026 (Juan, 2026-11-26). La vigilancia se paga 12 meses: el primer servicio del cliente en Avancys
+    // dice cuándo empezó un cliente que entró después del arranque de Avancys (agosto de 2026). El monitoreo se paga
+    // una vez, con la primera factura del cliente. Los equipos, cuando la factura queda pagada: hace falta su último
+    // abono, en cualquier mes.
+    const lineaDe = numero => String(facturas[numero]?.diario || '').toUpperCase();
+    const clientesDe = palabra => [...new Set(Object.keys(facturas).filter(n => lineaDe(n).includes(palabra) && facturas[n].tipo === 'out_invoice').map(n => facturas[n].cliente_id).filter(id => id !== null))];
+    const primerServicio = {};
+    const primeraMonitoreo = {};
+    const deServicios = clientesDe('SERVICIOS');
+    for (let i = 0; i < deServicios.length; i += 300) {
+      Object.assign(primerServicio, await minimoPorCliente('orden', [['client_id', 'in', deServicios.slice(i, i + 300)], ['fact_start_date', '!=', false]], 'client_id', 'fact_start_date'));
+    }
+    const deMonitoreo = clientesDe('MONITOREO');
+    for (let i = 0; i < deMonitoreo.length; i += 300) {
+      Object.assign(primeraMonitoreo, await minimoPorCliente('facturaComision', [['partner_id', 'in', deMonitoreo.slice(i, i + 300)], ['journal_id.name', 'ilike', 'MONITOREO'], ['move_type', '=', 'out_invoice'], ['state', '=', 'posted']], 'partner_id', 'invoice_date'));
+    }
+    const ultimoAbono = {};
+    const equipos = Object.keys(facturas).filter(n => /COMERCIALIZACI/.test(lineaDe(n)) && facturas[n].tipo === 'out_invoice' && facturas[n].pendiente <= 1);
+    for (let i = 0; i < equipos.length; i += 40) {
+      const lote = equipos.slice(i, i + 40);
+      const porNombre = lote.flatMap((numero, k) => (k < lote.length - 1 ? ['|'] : []).concat([['name', 'ilike', numero]]));
+      const abonos = await leer('recaudo', [['account_id.code', '=like', '1305%'], ['credit', '>', 0], ['parent_state', '=', 'posted'],
+        ['journal_id.type', 'in', ['bank', 'cash', 'general']], ...porNombre], { limite: MAX_FILAS_PAGINADO, orden: 'id asc', pagina: 400 });
+      for (const abono of abonos) for (const numero of lote) {
+        if (`${abono.name || ''} ${abono.ref || ''}`.toUpperCase().includes(numero) && (!ultimoAbono[numero] || abono.date > ultimoAbono[numero])) ultimoAbono[numero] = abono.date;
+      }
+    }
+
     return Object.freeze({
       mes,
+      primerServicio: Object.freeze(primerServicio),
+      primeraMonitoreo: Object.freeze(primeraMonitoreo),
+      ultimoAbono: Object.freeze(ultimoAbono),
       recaudos: Object.freeze(recaudos.map(r => Object.freeze({
         id: r.id, fecha: r.date, valor: Number(r.credit) || 0,
         texto: [texto(r.name), texto(r.ref)].filter(Boolean).join(' '),
