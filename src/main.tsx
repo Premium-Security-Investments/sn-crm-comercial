@@ -3181,8 +3181,8 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
             : <NowQueue pending={pendingDecisionRows} today={todayRows} stages={data.stages} lossReasons={data.lossReasons}
               competitors={data.competitors || []} onChanged={refresh} empty={nowEmpty} now={now} />}
           {isCalm && <TodayDone opportunities={opportunities.filter(o => isAgt003CommercialOpportunity(o))} now={now} />}
-          <RenewalsDue items={renewals} />
           <ContratosClientesPanel modo="propio" />
+          <RenewalsDue items={renewals} />
           <RenewalsDue items={competitorContracts} title="Contratos de la competencia por vencer" />
           <WeekList upcoming={weekRows} />
         </div>

@@ -69,5 +69,5 @@ test('servidor, migración y pantallas: alcance de «Mis clientes», tabla sólo
   assert.match(sql, /revoke all on table public\.psi_client_contracts from public, anon, authenticated/);
   const main = read('../src/main.tsx');
   assert.match(main, /<ContratosClientesPanel modo="equipo" \/>/);
-  assert.match(main, /<RenewalsDue items=\{renewals\} \/>\n\s*<ContratosClientesPanel modo="propio" \/>/);
+  assert.match(main, /<ContratosClientesPanel modo="propio" \/>\n\s*<RenewalsDue items=\{renewals\} \/>/);
 });
