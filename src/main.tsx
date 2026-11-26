@@ -29,6 +29,7 @@ import { TenderVigiaChannel } from './tenders/workspace/TenderVigiaChannel';
 import { TenderOwnDocuments } from './tenders/workspace/TenderOwnDocuments';
 import { TenderMiDia, type TenderMiDiaResumen } from './tenders/components/TenderMiDia';
 import { classifyOpportunityStage } from './tenders/opportunityStage';
+import { alCambiarSesion, configSecurityOps, entrarConSecurityOps, retomarSesion, salirDeSecurityOps, sesionGuardada, type SesionSecurityOps } from './accesoSecurityOps';
 import { VigiaDock } from './vigia/VigiaDock';
 import { TenderMyDayOfferReminder } from './tenders/components/TenderMyDayOfferReminder';
 import { TenderCompanyDocumentBridgePanel } from './tenders/components/TenderCompanyDocumentBridgePanel';
@@ -445,7 +446,12 @@ function nextActionStatus(o: Pick<Opportunity, 'stage_code' | 'next_action_at' |
 
 function App() {
   const [route, setRoute] = useState<Route>(parseRoute());
-  const [session, setSession] = useState<Session | null>(null);
+  const [supabaseSession, setSession] = useState<Session | null>(null);
+  // Inicio de sesión común (ensayo): sesión con la cuenta del directorio de SecurityOps. Si existe, manda sobre la de Supabase.
+  const [sesionSO, setSesionSO] = useState<SesionSecurityOps | null>(null);
+  const session = sesionSO
+    ? ({ access_token: sesionSO.idToken, user: { email: sesionSO.email } } as unknown as Session)
+    : supabaseSession;
   const [authReady, setAuthReady] = useState(false);
   const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [data, setData] = useState<Bootstrap | null>(null);
@@ -458,18 +464,23 @@ function App() {
     finally { setLoading(false); }
   };
   useEffect(() => {
-    supabaseBrowser.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setApiAccessToken(data.session?.access_token || null);
-      setAuthReady(true);
+    const dejarDeOir = alCambiarSesion(nueva => {
+      setSesionSO(nueva);
+      if (nueva) setApiAccessToken(nueva.idToken);
+      else void supabaseBrowser.auth.getSession().then(({ data }) => setApiAccessToken(data.session?.access_token || null));
     });
+    void retomarSesion().then(retomada => supabaseBrowser.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setApiAccessToken(retomada?.idToken || data.session?.access_token || null);
+      setAuthReady(true);
+    }));
     const { data: listener } = supabaseBrowser.auth.onAuthStateChange((event, nextSession) => {
       if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true);
       setSession(nextSession);
-      setApiAccessToken(nextSession?.access_token || null);
-      if (!nextSession) { setData(null); setPasswordRecovery(false); }
+      if (!(sesionGuardada() !== null)) setApiAccessToken(nextSession?.access_token || null);
+      if (!nextSession && !(sesionGuardada() !== null)) { setData(null); setPasswordRecovery(false); }
     });
-    return () => listener.subscription.unsubscribe();
+    return () => { listener.subscription.unsubscribe(); dejarDeOir(); };
   }, []);
   useEffect(() => { if (authReady && session) refresh(); }, [authReady, session?.access_token]);
   useEffect(() => {
@@ -519,7 +530,7 @@ function App() {
         viewMode={realProfile && canUseCommercialView(realProfile) ? viewMode : undefined} onChangeViewMode={changeViewMode}
         whatsapp={realProfile?.whatsapp_phone || null}
         onSaveWhatsapp={realProfile && realProfile.identity_type !== 'agent' ? async value => { await api('/api/me/whatsapp', { method: 'PUT', body: JSON.stringify({ whatsapp_phone: value }) }); await refresh(); } : undefined}
-        onRefresh={() => void refresh()} onSignOut={() => void supabaseBrowser.auth.signOut()} />
+        onRefresh={() => void refresh()} onSignOut={() => { salirDeSecurityOps(); setData(null); void supabaseBrowser.auth.signOut(); }} />
     </CabeceraMarca>
     {sidebarOpen && <div className="sidebar-backdrop" onClick={closeSidebar} aria-hidden="true" />}
     <aside id="app-sidebar" className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`} aria-label="Navegación principal">
@@ -574,11 +585,21 @@ function LoginScreen(_props: { siioMode?: boolean }) {
   const [password, setPassword] = useState('');
   const [aviso, setAviso] = useState<{ tipo: 'error' | 'info'; texto: string } | null>(null);
   const [ingresando, setIngresando] = useState(false);
+  // Ensayo del inicio de sesión común: solo aparece donde el servidor lo habilita (Google, no Vercel).
+  const [conSecurityOps, setConSecurityOps] = useState(false);
+  const [securityOpsDisponible, setSecurityOpsDisponible] = useState(false);
+  useEffect(() => { void configSecurityOps().then(cfg => setSecurityOpsDisponible(cfg.enabled)); }, []);
   const normalizedEmail = email.trim().toLowerCase();
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAviso(null);
     setIngresando(true);
+    if (conSecurityOps) {
+      try { await entrarConSecurityOps(normalizedEmail, password); }
+      catch (error) { setAviso({ tipo: 'error', texto: error instanceof Error ? error.message : String(error) }); }
+      finally { setIngresando(false); }
+      return;
+    }
     const { error } = await supabaseBrowser.auth.signInWithPassword({ email: normalizedEmail, password });
     setIngresando(false);
     if (error) setAviso({ tipo: 'error', texto: error.message === 'Invalid login credentials' ? 'Correo o clave incorrectos.' : error.message });
@@ -589,13 +610,16 @@ function LoginScreen(_props: { siioMode?: boolean }) {
     const { error } = await supabaseBrowser.auth.resetPasswordForEmail(normalizedEmail, { redirectTo: window.location.origin });
     setAviso(error ? { tipo: 'error', texto: error.message } : { tipo: 'info', texto: 'Te enviamos un enlace para restablecer la clave. Revisa tu correo.' });
   };
-  return <IngresoMarca titulo="Iniciar sesión" subtitulo="Ingresa tus credenciales para continuar.">
+  return <IngresoMarca titulo="Iniciar sesión" subtitulo={conSecurityOps ? 'Con tu correo y la clave de SecurityOps.' : 'Ingresa tus credenciales para continuar.'}>
     <form onSubmit={submit}>
       {aviso && <AvisoIngreso tipo={aviso.tipo}>{aviso.texto}</AvisoIngreso>}
       <label>Correo electrónico<span className="sn-ingreso-campo"><Mail aria-hidden="true" /><input type="email" required autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} placeholder="usuario@seguridadnacional.co" /></span></label>
       <label>Contraseña<span className="sn-ingreso-campo"><Lock aria-hidden="true" /><input type="password" required autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" /></span></label>
-      <button type="button" className="sn-ingreso-olvido" onClick={resetPassword}>¿Olvidaste tu contraseña?</button>
+      {!conSecurityOps && <button type="button" className="sn-ingreso-olvido" onClick={resetPassword}>¿Olvidaste tu contraseña?</button>}
       <button className="sn-ingreso-entrar" disabled={ingresando}>{ingresando ? 'Verificando…' : <>Acceder al sistema<ChevronRight aria-hidden="true" /></>}</button>
+      {securityOpsDisponible && <button type="button" className="sn-ingreso-olvido" onClick={() => { setConSecurityOps(on => !on); setAviso(null); }}>
+        {conSecurityOps ? 'Entrar con la clave del SIIO' : 'Entrar con la cuenta de SecurityOps'}
+      </button>}
     </form>
   </IngresoMarca>;
 }
