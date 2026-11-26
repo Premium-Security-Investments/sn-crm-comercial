@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { loadTenderMiDia, markTenderMiDiaHecho } from '../api';
-import type { TenderMiDia as TenderMiDiaPayload, TenderMiDiaAccion, TenderMiDiaActividad, TenderMiDiaPendiente, TenderRequest } from '../types';
+import type { TenderMiDia as TenderMiDiaPayload, TenderMiDiaAccion, TenderMiDiaActividad, TenderRequest } from '../types';
 import { formatDay, formatDeadline } from '../workspace/tenderWorkspaceFormat';
 
 const ACTIVIDAD: Record<TenderMiDiaActividad, string> = { observar: 'Observar', presentar: 'Presentar', tramitar: 'Tramitar', unirnos: 'Unirnos' };
@@ -22,7 +22,11 @@ function hora(value: string, tieneHora: boolean) {
   const comma = text.indexOf(', ');
   return comma >= 0 ? text.slice(comma + 2) : '—';
 }
-const isAccion = (item: TenderMiDiaAccion | TenderMiDiaPendiente): item is TenderMiDiaAccion => 'key' in item;
+/** «3 críticos abiertos»: lo que no se subsana o causa rechazo; el detalle se trabaja en el proceso. */
+const criticosTexto = (n: number) => (n === 1 ? '1 crítico abierto' : `${n} críticos abiertos`);
+
+/** Las fuentes de la entidad dan horas distintas: se muestra la más temprana. */
+const HORA_POR_CONFIRMAR = 'la hora más temprana de las fuentes; por confirmar';
 
 function Tag({ actividad }: { actividad: TenderMiDiaActividad }) {
   return <span className={`mi-dia-tag is-${actividad}`}>{ACTIVIDAD[actividad]}</span>;
@@ -32,14 +36,24 @@ function Tag({ actividad }: { actividad: TenderMiDiaActividad }) {
  * Mi día de quien trabaja licitaciones (Juan, 2026-11-15; maqueta aprobada). Es una sección de alertas: sólo lo que vence
  * o es crítico, y cada cosa lleva a la página de su proceso, donde se trabaja. Arriba la frase de la semana; luego lo
  * general (las cuatro actividades) y el día a día (lo que hace la persona, con «Hecho»). Lo que publica la entidad va
- * plegado al final. Si no se puede leer, Mi día sigue igual: es un aviso, no una condición.
+ * plegado al final. Presentar cuenta, al lado de cada cierre, cuántas cosas críticas siguen abiertas, y un cierre de
+ * fecha dudosa sale «por confirmar en SECOP»; el detalle de lo crítico va en «Mis pendientes» (Juan, 2026-11-25). Si no se puede leer, Mi día sigue igual: es un aviso, no una condición.
  */
-export function TenderMiDia({ request, onOpen, onGo }: { request: TenderRequest; onOpen: (opportunityId: string) => void; onGo: (hash: string) => void }) {
+/** Lo que Mi día necesita saber de licitaciones para su frase de arriba y para decidir qué sección va primero. */
+export type TenderMiDiaResumen = { hoy: number; primero: { proceso: string; texto: string; hora: string | null } | null };
+
+export function TenderMiDia({ request, onOpen, onGo, onSummary }: { request: TenderRequest; onOpen: (opportunityId: string) => void; onGo: (hash: string) => void; onSummary?: (resumen: TenderMiDiaResumen) => void }) {
   const [data, setData] = useState<TenderMiDiaPayload | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const reload = useCallback(() => loadTenderMiDia(request).then(setData, () => undefined), [request]);
   useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => {
+    if (!data || !onSummary) return;
+    const hoy = (data.dias.find(day => day.dias === 0)?.items || []).filter(item => !item.hecho);
+    const first = hoy[0];
+    onSummary({ hoy: hoy.length, primero: first ? { proceso: first.proceso, texto: first.texto, hora: first.tiene_hora ? hora(first.value, true) : null } : null });
+  }, [data, onSummary]);
   if (!data) return null;
 
   const toggle = async (item: TenderMiDiaAccion) => {
@@ -53,7 +67,7 @@ export function TenderMiDia({ request, onOpen, onGo }: { request: TenderRequest;
 
   const row = (item: TenderMiDiaAccion) => <div key={item.key} className={`mi-dia-row${item.hecho ? ' is-done' : ''}`}>
     <span className="mi-dia-hora">{hora(item.value, item.tiene_hora)}</span>
-    <span className="mi-dia-text"><Tag actividad={item.actividad} />{item.texto} · {item.proceso} {goProcess(item.opportunity_id)}
+    <span className="mi-dia-text"><Tag actividad={item.actividad} />{item.texto} · {item.proceso}{item.hora_por_confirmar ? <> · <b>{HORA_POR_CONFIRMAR}</b></> : null}{item.criticos ? <> · <b>{criticosTexto(item.criticos)}</b></> : null} {goProcess(item.opportunity_id)}
       {item.hecho && <small className="muted"> — hecho{item.hecho.por ? ` por ${item.hecho.por}` : ''}</small>}</span>
     <span className="mi-dia-who">{item.responsable || '—'}</span>
     {data.hechos_disponible
@@ -65,7 +79,6 @@ export function TenderMiDia({ request, onOpen, onGo }: { request: TenderRequest;
   const primero = frase.primero;
   const observar = a.observar;
   const presentar = a.presentar;
-  const critico = presentar.critico;
 
   return <section className="mi-dia" aria-label="Mi día de licitaciones">
     <p className="mi-dia-lead">
@@ -76,7 +89,7 @@ export function TenderMiDia({ request, onOpen, onGo }: { request: TenderRequest;
           frase.cierres ? <>presenta <b>{frase.cierres === 1 ? '1 oferta' : `${frase.cierres} ofertas`}</b></> : null,
         ].filter(Boolean).map((part, index, list) => <span key={index}>{index > 0 ? (index === list.length - 1 ? ' y ' : ', ') : ''}{part}</span>)}.</>
         : <>Esta semana no tiene plazos para radicar.</>}
-      {primero && <> Lo primero: <b>{primero.proceso}, {dayTitle(primero.day, Math.round((Date.parse(`${primero.day}T00:00:00Z`) - Date.parse(`${data.today}T00:00:00Z`)) / 86_400_000)).toLowerCase()}{primero.tiene_hora ? `, ${hora(primero.value, true)}` : ''}</b>{primero.tiene_hora ? '' : '.'}</>}
+      {primero && <> Lo primero: <b>{primero.proceso}, {dayTitle(primero.day, Math.round((Date.parse(`${primero.day}T00:00:00Z`) - Date.parse(`${data.today}T00:00:00Z`)) / 86_400_000)).toLowerCase()}{primero.tiene_hora ? `, ${hora(primero.value, true)}` : ''}</b>{primero.hora_por_confirmar ? <> ({HORA_POR_CONFIRMAR})</> : null}{primero.tiene_hora ? '' : '.'}</>}
     </p>
 
     <h3 className="mi-dia-h">Lo general · las cuatro actividades</h3>
@@ -89,9 +102,12 @@ export function TenderMiDia({ request, onOpen, onGo }: { request: TenderRequest;
       </article>
       <article className="mi-dia-card is-presentar">
         <h4>Presentar</h4>
-        <p className="mi-dia-n">{presentar.cierres === 1 ? '1 plazo' : `${presentar.cierres} plazos`} en 15 días</p>
-        {presentar.items.length ? <ul>{presentar.items.map(item => <li key={item.key}>{item.proceso} · {item.texto === 'Manifestar interés' ? 'interés ' : ''}{shortDay(item.day)}</li>)}</ul> : <p className="muted">Ningún cierre en 15 días.</p>}
-        {critico && <p className="mi-dia-next">Crítico: {critico.texto}{critico.proceso ? ` · ${critico.proceso}` : ''}{!isAccion(critico) && critico.vencido_hace ? ` (venció hace ${critico.vencido_hace} d)` : ''} {goProcess(critico.opportunity_id)}</p>}
+        <p className="mi-dia-n">{presentar.cierres === 1 ? '1 cierre' : `${presentar.cierres} cierres`} en 15 días</p>
+        {presentar.items.length ? <ul>{presentar.items.map(item => <li key={item.key} title={(item.criticos_titulos || []).join('\n') || undefined}>
+          {item.proceso} · {shortDay(item.day)}{item.tiene_hora ? `, ${hora(item.value, true)}` : ''}
+          {item.por_confirmar ? <> · <b>fecha por confirmar en SECOP</b></> : null}
+          {item.criticos ? <> · <b>{criticosTexto(item.criticos)}</b></> : null} {goProcess(item.opportunity_id)}
+        </li>)}</ul> : <p className="muted">Ningún cierre en 15 días.</p>}
       </article>
       <article className="mi-dia-card is-tramitar">
         <h4>Tramitar</h4>

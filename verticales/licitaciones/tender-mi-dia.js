@@ -4,8 +4,11 @@
 // página de su proceso. Por eso no trae listas completas del expediente: sólo lo que vence o es crítico, cada cosa con
 // el proceso al que lleva. Dos niveles que conviven:
 //   1. Lo general — las cuatro actividades permanentes: Observar, Presentar, Tramitar y Unirnos.
-//   2. El día a día — lo que hace la persona: hoy y cada día de la semana (con «Hecho»), lo crítico sin fecha de la
-//      entidad, la próxima semana y, aparte, lo que publica la entidad (respuestas, adendas, audiencias).
+//   2. El día a día — lo que hace la persona: hoy y cada día de la semana (con «Hecho»), «Mis pendientes» (lo crítico
+//      del expediente, los trámites y los avisos del cronograma, sin fecha de la entidad), la próxima semana y, aparte,
+//      lo que publica la entidad (respuestas, adendas, audiencias).
+// En el día, «Presentar» es sólo el cierre; la tarjeta Presentar cuenta los cierres con sus críticos abiertos y no pierde
+// un cierre de fecha dudosa: lo muestra «por confirmar en SECOP» (Juan, 2026-11-25).
 //
 // Antes, «Licitaciones: esta semana» mezclaba 23 hitos (17 de la entidad) y la cabecera decía «Hoy está despejado».
 // Módulo puro: el servidor le pasa los procesos abiertos, la pestaña Requisitos y lo marcado como hecho.
@@ -42,13 +45,17 @@ const ACCION_POR_TIPO = {
   SUBMISSION: { actividad: 'presentar', texto: 'Presentar la oferta (cierre)' },
 };
 const MANIFESTACION = /manifestaci[oó]n de inter[eé]s/i;
+// La manifestación para limitar la convocatoria a Mipymes/Mypes no es para participar: Seguridad Nacional es gran
+// empresa y no la hace (Popayán LP 01, 25-nov). Queda como fecha de la entidad, no como tarea.
+const LIMITAR_A_MIPYMES = /limitar|mi?pymes?|mypes?/i;
 // «Solo en unión temporal: …» es como Vig-IA dice que no vamos solos.
 const SOLO_CON_ALIADO = /^\s*solo (?:en|con) (?:uni[oó]n temporal|consorcio|aliad)/i;
 const RESUELTO = new Set(['resuelto', 'no_por_ahora']);
 
 function accionDe(deadline) {
   if (ACCION_POR_TIPO[deadline?.kind]) return ACCION_POR_TIPO[deadline.kind];
-  if (MANIFESTACION.test(String(deadline?.label || ''))) return { actividad: 'presentar', texto: 'Manifestar interés' };
+  const label = String(deadline?.label || '');
+  if (MANIFESTACION.test(label) && !LIMITAR_A_MIPYMES.test(label)) return { actividad: 'presentar', texto: 'Manifestar interés' };
   return null;
 }
 
@@ -66,7 +73,7 @@ function ordenar(a, b) {
 
 /**
  * processes: [{ opportunity_id, entity, ref, responsable, offer_status, deadlines: [{ kind, value, label }],
- *   recomendacion, cronograma_faltante, criticos: [{ titulo, consecuencia, target_date, responsable }] }]
+ *   recomendacion, close_date, cronograma_faltante, criticos: [{ titulo, consecuencia, target_date, responsable }] }]
  * requisitos: los focos de la pestaña Requisitos (buildRequirementFocus). hechos: [{ item_key, done_at, done_by_name }].
  */
 export function buildTenderMiDia({ processes = [], requisitos = [], hechos = [], today } = {}) {
@@ -79,17 +86,28 @@ export function buildTenderMiDia({ processes = [], requisitos = [], hechos = [],
   const acciones = [];
   const entidad = [];
   const pendientes = [];
+  const porConfirmar = [];
   const unirnos = [];
   for (const process of processes || []) {
     const proceso = nombreCorto(process.entity) || process.ref || 'Licitación';
     const base = { opportunity_id: process.opportunity_id, proceso, ref: process.ref || null };
     const seen = new Set();
     const presentada = process.offer_status === 'presentada';
-    // Fechas que una fuente posterior contradice (Barranquilla, 15-nov): no se anuncian como plazos; se pide confirmar.
-    const contradichas = (process.deadlines || []).filter(deadline => deadline?.certainty === 'CONTRADICTED');
+    // Lo crítico del expediente se trabaja en el proceso; al lado del cierre sólo va cuántos quedan abiertos.
+    const criticos = presentada ? [] : (process.criticos || []).map(item => String(item?.titulo || '').trim()).filter(Boolean);
     for (const deadline of process.deadlines || []) {
-      if (deadline?.certainty === 'CONTRADICTED') continue;
       const day = tenderSemanaDia(deadline?.value);
+      // Una fecha que una fuente posterior contradice (Barranquilla, 15-nov) no va al día; pero un cierre no se pierde:
+      // sale en la tarjeta Presentar «por confirmar en SECOP», con el enlace al proceso.
+      if (deadline?.certainty === 'CONTRADICTED') {
+        if (deadline.kind === 'SUBMISSION' && !presentada && day && day >= today && day <= finPresentar) {
+          porConfirmar.push({ ...base, key: miDiaClave(process.opportunity_id, deadline.kind, deadline.value), actividad: 'presentar',
+            texto: 'Presentar la oferta (cierre)', value: deadline.value, day, tiene_hora: tenderSemanaTieneHora(deadline.value),
+            dias: daysBetween(today, day), responsable: process.responsable || null, por_confirmar: true,
+            criticos: criticos.length, criticos_titulos: criticos.slice(0, 5), hecho: null });
+        }
+        continue;
+      }
       if (!day || day < today || day > finProxima) continue;
       const accion = accionDe(deadline);
       // Ya presentada, el cierre no es una acción suya; sin oferta, el informe de evaluación no se observa.
@@ -99,17 +117,20 @@ export function buildTenderMiDia({ processes = [], requisitos = [], hechos = [],
       if (seen.has(key)) continue;
       seen.add(key);
       const tiene_hora = tenderSemanaTieneHora(deadline.value);
+      // Las fuentes de la entidad no coinciden en la hora: se muestra la más temprana, «por confirmar» (Medellín, 26-nov).
+      const hora = deadline.horaPorConfirmar ? { hora_por_confirmar: true } : {};
       if (accion) {
         const hecho = hechoPorClave.get(key) || null;
         acciones.push({ ...base, key, actividad: accion.actividad, texto: accion.texto, value: deadline.value, day, tiene_hora,
-          dias: daysBetween(today, day), responsable: process.responsable || null,
+          dias: daysBetween(today, day), responsable: process.responsable || null, ...hora,
+          ...(deadline.kind === 'SUBMISSION' ? { criticos: criticos.length, criticos_titulos: criticos.slice(0, 5) } : {}),
           hecho: hecho ? { at: hecho.done_at || null, por: hecho.done_by_name || null } : null });
       } else if (day <= finSemana) {
-        entidad.push({ ...base, key, texto: String(deadline.label || deadline.kind || 'Fecha del cronograma').trim(), value: deadline.value, day, tiene_hora });
+        entidad.push({ ...base, key, texto: String(deadline.label || deadline.kind || 'Fecha del cronograma').trim(), value: deadline.value, day, tiene_hora, ...hora });
       }
     }
-    // Lo que no se subsana o causa rechazo y sigue abierto: con fecha en las dos semanas va al día; vencido o sin fecha,
-    // a «sin fecha de la entidad». Nada más del expediente: el resto se trabaja en el proceso.
+    // Mis pendientes: lo que no tiene fecha de la entidad pero alguien debe resolver.
+    const contradichas = (process.deadlines || []).filter(deadline => deadline?.certainty === 'CONTRADICTED');
     if (contradichas.length) {
       pendientes.push({ ...base, actividad: 'presentar', texto: `Confirmar el cronograma en SECOP: ${contradichas.length === 1 ? 'una fecha del análisis está contradicha' : `${contradichas.length} fechas del análisis están contradichas`}`,
         responsable: process.responsable || null, vencido_hace: null, destino: 'proceso' });
@@ -117,16 +138,8 @@ export function buildTenderMiDia({ processes = [], requisitos = [], hechos = [],
     for (const item of presentada ? [] : process.criticos || []) {
       const target = isDay(String(item.target_date || '').slice(0, 10)) ? String(item.target_date).slice(0, 10) : null;
       const texto = `${item.titulo}${item.consecuencia === 'no_subsanable' ? ' (no se subsana)' : ' (causa rechazo)'}`;
-      if (target && target >= today && target <= finProxima) {
-        const key = miDiaClave(process.opportunity_id, 'CRITICO', `${target}:${item.titulo}`);
-        const hecho = hechoPorClave.get(key) || null;
-        acciones.push({ ...base, key, actividad: 'presentar', texto, value: target, day: target, tiene_hora: false,
-          dias: daysBetween(today, target), responsable: item.responsable || process.responsable || null,
-          hecho: hecho ? { at: hecho.done_at || null, por: hecho.done_by_name || null } : null });
-      } else if (!target || target < today) {
-        pendientes.push({ ...base, actividad: 'presentar', texto, responsable: item.responsable || process.responsable || null,
-          vencido_hace: target ? daysBetween(target, today) : null, destino: 'proceso' });
-      }
+      pendientes.push({ ...base, actividad: 'presentar', texto, responsable: item.responsable || process.responsable || null,
+        vencido_hace: target && target < today ? daysBetween(target, today) : null, destino: 'proceso' });
     }
     if (process.cronograma_faltante) {
       pendientes.push({ ...base, actividad: 'observar', texto: 'Falta el cronograma de SECOP: subir «Información del procedimiento»',
@@ -153,7 +166,6 @@ export function buildTenderMiDia({ processes = [], requisitos = [], hechos = [],
       texto: `${focus.titulo} (${focus.estado === 'en_tramite' ? 'en trámite' : 'iniciar trámite'})`, responsable: null,
       vencido_hace: null, destino: 'requisitos' });
   }
-
   const semana = acciones.filter(item => item.day <= finSemana);
   const proxima = acciones.filter(item => item.day > finSemana);
   const dias = [];
@@ -165,10 +177,9 @@ export function buildTenderMiDia({ processes = [], requisitos = [], hechos = [],
 
   const observarSemana = semana.filter(item => item.actividad === 'observar');
   const observarProxima = proxima.filter(item => item.actividad === 'observar');
-  const cierres = acciones.filter(item => item.actividad === 'presentar' && item.day <= finPresentar && !item.key.includes('|CRITICO|'));
-  // Lo que no se subsana manda sobre cualquier otro aviso; después lo crítico con fecha y lo demás sin fecha.
-  const criticoPresentar = [...acciones.filter(item => item.key.includes('|CRITICO|') && !item.hecho), ...pendientes.filter(item => item.actividad === 'presentar')]
-    .sort((a, b) => Number(!a.texto.includes('(no se subsana)')) - Number(!b.texto.includes('(no se subsana)')))[0] || null;
+  // Presentar es sólo el cierre de un proceso al que vamos; la manifestación de interés va al día, no a esta tarjeta.
+  const cierres = [...acciones.filter(item => item.texto === 'Presentar la oferta (cierre)' && item.day <= finPresentar), ...porConfirmar]
+    .sort(ordenar);
   const abiertas = list => list.filter(item => !item.hecho);
   const primero = abiertas(semana)[0] || null;
   const manifestaciones = abiertas(semana).filter(item => item.texto === 'Manifestar interés');
@@ -180,12 +191,12 @@ export function buildTenderMiDia({ processes = [], requisitos = [], hechos = [],
       observaciones: abiertas(observarSemana).length,
       manifestaciones: manifestaciones.map(item => ({ proceso: item.proceso, opportunity_id: item.opportunity_id })),
       cierres: abiertas(semana.filter(item => item.texto === 'Presentar la oferta (cierre)')).length,
-      primero: primero ? { proceso: primero.proceso, texto: primero.texto, value: primero.value, day: primero.day, tiene_hora: primero.tiene_hora, opportunity_id: primero.opportunity_id } : null,
+      primero: primero ? { proceso: primero.proceso, texto: primero.texto, value: primero.value, day: primero.day, tiene_hora: primero.tiene_hora, opportunity_id: primero.opportunity_id, ...(primero.hora_por_confirmar ? { hora_por_confirmar: true } : {}) } : null,
     },
     actividades: {
       observar: { esta_semana: observarSemana.length, proxima: observarProxima.length, items: observarSemana.slice(0, 4),
         proximo: abiertas(observarSemana)[0] || abiertas(observarProxima)[0] || null },
-      presentar: { cierres: cierres.length, items: cierres.slice(0, 4), critico: criticoPresentar },
+      presentar: { cierres: cierres.length, items: cierres.slice(0, 4) },
       tramitar: { por_tramitar: tramitar.filter(item => item.estado === 'iniciar' || item.estado === 'en_tramite').length,
         sin_dato: tramitar.filter(item => item.sin_dato).length, total: tramitar.length, items: tramitar.slice(0, 3) },
       unirnos: { total: unirnos.length, items: unirnos.slice(0, 4) },

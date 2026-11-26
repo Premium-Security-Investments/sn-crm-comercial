@@ -89,12 +89,15 @@ import { ACTIONS } from '../access-control.js';
 import { regionalForOpportunityWrite } from '../src/regional-options.js';
 import { isAgt003CommercialOpportunity } from '../src/vigia/commercial-scope.js';
 import { DEFAULT_GUARD_RATES, DEFAULT_TECH_RATES, normalizeGuardRates, normalizeTechRates, quoteTotals, ratesInEffect } from '../src/vigia/quote-engine.js';
-import { opportunityValueFromQuote } from '../src/vigia/quote-proposal.js';
+import { GUARD_OPPORTUNITY_TYPE, TECH_OPPORTUNITY_TYPE, opportunityValuesFromQuote } from '../src/vigia/quote-proposal.js';
+import { calcularComisiones } from '../src/vigia/comisiones.js';
+import { contratosDeClientes, inicioDeComision, resumenContratos } from '../src/vigia/contratos-clientes.js';
+import { catalogoParaCotizar } from '../src/vigia/catalogo-avancys.js';
 import { CLIENT_DEAL_FIELD, CLIENT_PROFILE_FIELDS, hasClientProfileFields, normalizeClientDeal, normalizeClientProfile, profileCompleteness } from '../src/vigia/client-profile.js';
 import { LEAD_ANALYSIS_CONTRACT_VERSION, bogotaMonthStartIso, monthlyMaxFrom } from '../src/vigia/lead-analysis.js';
 import { AGT003_MODEL_FAILURE, agt003ModelFailureMessage, classifyAgt003ModelFailure } from '../src/vigia/model-failures.js';
 import { buildLeadAnalysisInput, fetchCompanyWebsite, profileHash as leadAnalysisProfileHash, runLeadAnalysis } from '../verticales/comercial/agt003-lead-analysis.js';
-import { bogotaDay, bogotaDayStartIso, decisionQuota, DELETE_PERMISSION, isOutOfActivePipeline, normalizeDecisionRequest, pendingDecisions } from '../src/vigia/opportunity-decision-rules.js';
+import { bogotaDay, bogotaDayStartIso, decisionQuota, DELETE_PERMISSION, isFrozen, isOutOfActivePipeline, normalizeDecisionRequest, pendingDecisions } from '../src/vigia/opportunity-decision-rules.js';
 import { normalizeClientName, typeaheadMatches } from '../verticales/gerencial/siio-sales-clients.js';
 import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
 import { buildAgt003PrioritiesData } from '../verticales/comercial/agt003-priorities-service.js';
@@ -520,12 +523,17 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/vigia/priorities': ['vigia', ACTIONS.MODULE_VIGIA_VIEW],
   'GET /api/vigia/commercial-behavior': ['vigia', ACTIONS.MODULE_DASHBOARD_VIEW],
   'GET /api/agt003/avancys/cobro-por-comercial': ['vigia', ACTIONS.MODULE_DASHBOARD_VIEW],
+  'GET /api/agt003/avancys/comisiones': ['vigia', ACTIONS.MODULE_DASHBOARD_VIEW],
+  'GET /api/agt003/contratos-clientes': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
+  'GET /api/agt003/catalogo': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
   'GET /api/agt003/quote-rates': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'POST /api/agt003/quote-rates': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
   'GET /api/agt003/quotes': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'GET /api/agt003/quote': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'POST /api/agt003/quotes': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
   'PUT /api/agt003/quote': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
+  'DELETE /api/agt003/quote': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
+  'POST /api/agt003/quote/link': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
   'POST /api/agt003/quote/use-in-opportunity': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
   'GET /api/avancys/mis-clientes': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'GET /api/avancys/cliente': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
@@ -1337,10 +1345,16 @@ async function attachCommercialMetadata(database, rows) {
   if (baseResult.error) throw baseResult.error;
   if (profileResult.error) throw profileResult.error;
   const segmentById = new Map((baseResult.data || []).map(o => [o.id, o.customer_segment || null]));
+  // El estado de la oferta y el archivo de las licitaciones (2026-11-25): el tablero contaba como activas las
+  // cerradas con NO-GO y las archivadas. Sólo para las filas de licitación.
+  const tenderIds = list.filter(o => o?.service_type_code === 'licitacion_publica').map(o => o.id).filter(Boolean);
+  const tenderResult = tenderIds.length ? await database.from('psi_sales_opportunities').select('id,tender_offer_status,archived_at').in('id', tenderIds) : { data: [] };
+  if (tenderResult.error) throw tenderResult.error;
+  const tenderById = new Map((tenderResult.data || []).map(o => [o.id, { tender_offer_status: o.tender_offer_status ?? null, archived_at: o.archived_at ?? null }]));
   const profileById = new Map((profileResult.data || []).map(p => [p.id, p]));
   const enriched = list.map(o => {
     const owner = profileById.get(o.owner_id);
-    return { ...o, ...(clientProfileById.get(o.id) || {}), customer_segment: segmentById.get(o.id) ?? o.customer_segment ?? null, owner_commercial_area: owner?.commercial_area || null, owner_can_edit_customer_segment: !!owner?.can_edit_customer_segment };
+    return { ...o, ...(clientProfileById.get(o.id) || {}), ...(tenderById.get(o.id) || {}), customer_segment: segmentById.get(o.id) ?? o.customer_segment ?? null, owner_commercial_area: owner?.commercial_area || null, owner_can_edit_customer_segment: !!owner?.can_edit_customer_segment };
   });
   return Array.isArray(rows) ? enriched : enriched[0];
 }
@@ -3491,6 +3505,70 @@ function filterPayrollAggregatesForManagement(rows) {
   return rows.filter(row => SIIO_MANAGEMENT_PAYROLL_VISIBILITY.has(row?.visibility_level));
 }
 
+// Cotizador de modelos de servicio (Gerencia, junto a la Torre; migración 235). Los datos del cliente viven solo en la
+// base. Hace falta la Torre y además el permiso de capacidad `siio_cotizador_modelos`: lleva precios, costos y márgenes.
+const SERVICE_MODEL_PERMISSION = 'siio_cotizador_modelos';
+const SERVICE_MODEL_PARAMS_MAX = 20000;
+function requireServiceModelAccess(profile) {
+  requireModuleAction(profile, 'siio');
+  if (profile?.role === 'junta' || profile?.role === 'director' || !hasPermission(profile, SERVICE_MODEL_PERMISSION)) {
+    const error = new Error('No tiene permiso para el cotizador de modelos de servicio.');
+    error.status = 403;
+    error.code = 'FORBIDDEN';
+    throw error;
+  }
+}
+function cleanServiceModelClient(value) {
+  const key = String(value ?? '').trim();
+  if (!/^[\p{L}\p{N}_ .-]{1,40}$/u.test(key)) {
+    const error = new Error('Cliente no válido.');
+    error.status = 400;
+    throw error;
+  }
+  return key;
+}
+app.get('/api/siio/cotizador-modelos', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireServiceModelAccess(profile);
+    const database = requireDb();
+    const clients = await database.from('psi_service_model_stores').select('client_key,cutoff').order('cutoff', { ascending: false }).limit(5000);
+    if (clients.error) {
+      if (siioFoundationUnavailable(clients.error)) return res.json({ disponible: false, clientes: [], cliente: null, corte: null, tiendas: [], escenarios: [] });
+      throw clients.error;
+    }
+    const keys = [...new Set((clients.data || []).map(row => row.client_key))];
+    const client = req.query.cliente ? cleanServiceModelClient(req.query.cliente) : keys[0] ?? null;
+    if (!client) return res.json({ disponible: true, clientes: [], cliente: null, corte: null, tiendas: [], escenarios: [] });
+    const cutoff = (clients.data || []).find(row => row.client_key === client)?.cutoff ?? null;
+    const [stores, scenarios] = await Promise.all([
+      must(database.from('psi_service_model_stores').select('zone,risk_level,new_store,guard_posts,contracted_value,unknown_shrink').eq('client_key', client).eq('cutoff', cutoff).limit(5000)),
+      must(database.from('psi_service_model_scenarios').select('id,name,params,is_baseline,created_at').eq('client_key', client).order('created_at', { ascending: false }).limit(100)),
+    ]);
+    res.json({
+      disponible: true, clientes: keys, cliente: client, corte: cutoff,
+      tiendas: (stores || []).map(row => ({ zona: row.zone, nivel: row.risk_level, nueva: row.new_store === true, puestos: Number(row.guard_posts) || 0, valor: Number(row.contracted_value) || 0, merma: Number(row.unknown_shrink) || 0 })),
+      escenarios: scenarios || [],
+    });
+  } catch (error) { sendAuthError(res, error); }
+});
+app.post('/api/siio/cotizador-modelos/escenarios', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireServiceModelAccess(profile);
+    const client = cleanServiceModelClient(req.body?.cliente);
+    const name = String(req.body?.nombre ?? '').trim();
+    if (name.length < 1 || name.length > 120) throw Object.assign(new Error('Ponga un nombre de 1 a 120 caracteres.'), { status: 400 });
+    const params = req.body?.params;
+    if (!params || typeof params !== 'object' || Array.isArray(params) || JSON.stringify(params).length > SERVICE_MODEL_PARAMS_MAX) {
+      throw Object.assign(new Error('Los supuestos del escenario no son válidos.'), { status: 400 });
+    }
+    const row = await must(requireDb().from('psi_service_model_scenarios')
+      .insert({ client_key: client, name, params, created_by: profile.id })
+      .select('id,name,params,is_baseline,created_at').single());
+    res.json(row);
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
 app.get('/api/siio/bootstrap', async (req, res) => {
   try {
     const { profile } = await getAuthContext(req);
@@ -4007,7 +4085,7 @@ function attachVigiaCustomerSegments(rows, segmentRows) {
   });
 }
 
-const VIGIA_COPILOT_OPPORTUNITY_SELECT = 'id,owner_id,owner_name,company_name,stage_name,service_type_name,offer_value,expected_close_date,next_action_at,updated_at';
+const VIGIA_COPILOT_OPPORTUNITY_SELECT = 'id,owner_id,owner_name,company_name,stage_name,service_type_name,offer_value,expected_close_date,next_action_at,updated_at,decision_maker_name,frozen_until';
 const VIGIA_APPROVED_ASSETS_PATH = path.join(__dirname, '..', 'config', 'vigia-approved-assets.v1.json');
 
 async function resolveAgt003OpportunityResource(database, opportunityId, profile) {
@@ -4044,6 +4122,9 @@ async function loadAgt003OpportunityClientNit(database, opportunityId) {
 
 async function loadAgt003OpportunityContext(database, opportunityId, now = () => new Date()) {
   const row = await must(database.from('v_psi_sales_opportunity_enriched').select(VIGIA_COPILOT_OPPORTUNITY_SELECT).eq('id', opportunityId).single());
+  // El cargo no está en la vista. Juan, 2026-11-25: Vig-IA dijo «no hay decisor verificado» de un cliente que tiene
+  // nombre y cargo (Gerente General) en la ficha: no se los pasábamos.
+  const { data: contact } = await database.from('psi_sales_opportunities').select('decision_maker_title').eq('id', opportunityId).maybeSingle();
   const interactions = await must(database.from('psi_sales_interactions')
     .select('id,interaction_type,occurred_at,created_at,notes')
     .eq('opportunity_id', opportunityId)
@@ -4059,6 +4140,9 @@ async function loadAgt003OpportunityContext(database, opportunityId, now = () =>
     offer_value: row.offer_value,
     expected_close_date: row.expected_close_date,
     next_action_date: row.next_action_at,
+    decision_maker: row.decision_maker_name || null,
+    decision_maker_title: contact?.decision_maker_title || null,
+    frozen_until: isFrozen(row, now()) ? row.frozen_until : null,
     preparation_date: agt003PreparationDate(now),
   };
   return {
@@ -4193,6 +4277,13 @@ export async function loadCommercialBehavior(database, profile, now = new Date()
     .map(({ id, full_name, role }) => ({ id, full_name, role }));
   const ids = salespeople.map(row => row.id);
   if (!ids.length) return buildCommercialBehavior({ salespeople, now });
+  // Desde cuándo cuenta la actividad de un perfil reasignado (migración 237). Sin la columna, cuenta todo.
+  {
+    const { data: since, error } = await database.from('psi_sales_profiles').select('id,activity_since').in('id', ids);
+    if (error && error.code !== '42703') throw error;
+    const sinceById = new Map((since || []).map(row => [row.id, row.activity_since || null]));
+    for (const person of salespeople) person.activity_since = sinceById.get(person.id) || null;
+  }
   const [viewRows, segmentRows] = await Promise.all([
     fetchVigiaRows(database, ids.slice().sort(), BEHAVIOR_OPPORTUNITY_SELECT),
     fetchVigiaCustomerSegments(database, ids.slice().sort()),
@@ -4238,6 +4329,7 @@ export async function loadCommercialBehavior(database, profile, now = new Date()
     lastSeen,
     goals,
     now,
+    onlyWithPortfolio: true,
   });
   return { ...report, lastSeenAvailable };
 }
@@ -4642,6 +4734,68 @@ async function closureFormState(database, opportunity) {
 // Falla blanda en los dos puntos donde puede faltar algo: un comercial sin equivalencia y un
 // despliegue sin credenciales devuelven una lista vacía CON su razón escrita, nunca un error. Que
 // Avancys no conteste no puede tumbarle la pantalla a nadie.
+// AGT-003 — Catálogo de Avancys para el cotizador (entrega 5a; Juan, 2026-11-26: «si ya está en Avancys, ¿por qué no
+// se trae todo y ya?»). Todo el catálogo vendible, con su costo; el cotizador le aplica el margen de las tarifas. Lo
+// usa quien cotiza. El último catálogo leído se guarda para mostrarlo al instante si Avancys no responde.
+app.get('/api/agt003/catalogo', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireQuoteWriter(currentProfile);
+    const database = requireDb();
+    res.set('Cache-Control', 'private, no-store');
+    const lector = crearLectorAvancys();
+    if (!lector) {
+      const guardado = await leerGuardado(database, 'catalogo-avancys');
+      return res.json(guardado || { productos: [], motivo: 'Avancys no está configurado en este ambiente.' });
+    }
+    try {
+      const leido = await lector.catalogoDeProductos();
+      const respuesta = { productos: catalogoParaCotizar(leido.productos), as_of: leido.as_of, motivo: null, medido_en: new Date().toISOString() };
+      await guardarTorre(database, 'catalogo-avancys', respuesta);
+      return res.json(respuesta);
+    } catch (falla) {
+      if (!falla?.codigo) throw falla;
+      const guardado = await leerGuardado(database, 'catalogo-avancys');
+      return res.json(guardado ? { ...guardado, motivo: `Avancys no respondió (${falla.codigo}): catálogo del último cargue.` } : { productos: [], motivo: `Avancys no respondió: ${falla.codigo}` });
+    }
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// AGT-003 — Contratos de los clientes: estado y vencimiento (Juan, 2026-11-26). Las fechas salen de Avancys cuando las
+// tenga y, mientras tanto, del archivo cargado en psi_client_contracts (migración 238); cada fila dice su fuente. El
+// alcance es el de «Mis clientes»: el comercial ve los clientes que tiene asignados en Avancys; dirección, todos, salvo
+// que pida `alcance=propios` (Mi día). Si Avancys no responde, salen las fechas del archivo y sin comercial.
+app.get('/api/agt003/contratos-clientes', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
+    const database = requireDb();
+    res.set('Cache-Control', 'private, no-store');
+    const { data: archivo, error } = await database.from('psi_client_contracts')
+      .select('nit,razon_social,fecha_inicio,fecha_ultima_renovacion,fecha_fin,observacion,fuente').order('razon_social');
+    if (error) {
+      if (error.code === '42P01') return res.json({ contratos: [], resumen: {}, motivo: 'La tabla de contratos todavía no existe (migración 238).' });
+      throw error;
+    }
+    const { data: mapa, error: errorMapa } = await database.from('psi_avancys_salesperson_map').select('odoo_user_id').eq('profile_id', currentProfile.id);
+    if (errorMapa) throw errorMapa;
+    const propios = new Set((mapa || []).map(fila => fila.odoo_user_id));
+    const todos = veTodaLaCarteraComercial(currentProfile) && req.query.alcance !== 'propios';
+    let avancys = {};
+    let motivo = null;
+    const lector = crearLectorAvancys();
+    if (lector) {
+      try { avancys = await lector.clientesPorNit({ nits: (archivo || []).map(fila => fila.nit) }); } catch (falla) {
+        if (!falla?.codigo) throw falla;
+        motivo = `Avancys no respondió (${falla.codigo}): se muestran las fechas del archivo, sin el comercial de cada cliente.`;
+      }
+    } else motivo = 'Avancys no está configurado en este ambiente: se muestran las fechas del archivo, sin el comercial.';
+    const contratos = contratosDeClientes(archivo || [], avancys, bogotaDay(new Date()))
+      .filter(c => todos || (c.comercial_id !== null && propios.has(c.comercial_id)));
+    res.json({ alcance: todos ? 'todos' : 'propios', hoy: bogotaDay(new Date()), contratos, resumen: resumenContratos(contratos), motivo });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
 app.get('/api/avancys/mis-clientes', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -5053,6 +5207,21 @@ app.post('/api/agt003/quote-rates', async (req, res) => {
 // que se toma de las vigentes cada vez que se guarda. Quien la hizo la ve; gerencia y administración ven todas; si está
 // ligada a una oportunidad, también quien puede ver esa oportunidad.
 const QUOTE_SELECT = 'id,opportunity_id,client_name,title,status,guard_rates,tech_rates,created_by,created_at,updated_at';
+// Migración 236 (2026-11-25): la segunda oportunidad de una cotización mixta y el plazo de instalación. El código
+// funciona sin ella: lee sin esas columnas y no divide la cotización mixta.
+const QUOTE_SELECT_236 = `${QUOTE_SELECT},paired_opportunity_id,tech_delivery_terms`;
+let quoteColumns236 = null;
+async function hasQuoteColumns236(database) {
+  if (quoteColumns236) return true;
+  const { error } = await database.from('psi_quotes').select('paired_opportunity_id,tech_delivery_terms').limit(1);
+  if (error && (error.code === '42703' || /column/i.test(error.message || ''))) return false;
+  if (error) throw error;
+  quoteColumns236 = true;
+  return true;
+}
+function deliveryTermsOf(body) {
+  return typeof body?.tech_delivery_terms === 'string' ? body.tech_delivery_terms.trim().slice(0, 300) || null : undefined;
+}
 async function currentQuoteRates(database) {
   const rows = await readQuoteRates(database);
   const today = bogotaDay(new Date());
@@ -5076,11 +5245,15 @@ function quoteInput(body = {}) {
   return { guardPosts, techLines };
 }
 async function loadQuote(database, id, profile) {
-  const quote = await must(database.from('psi_quotes').select(QUOTE_SELECT).eq('id', id).maybeSingle());
+  const quote = await must(database.from('psi_quotes').select(await hasQuoteColumns236(database) ? QUOTE_SELECT_236 : QUOTE_SELECT).eq('id', id).maybeSingle());
   if (!quote) { const error = new Error('Cotización no encontrada.'); error.status = 404; throw error; }
   if (quote.created_by !== profile.id && !globalCrmScopeRoles.has(profile.role)) {
     if (!quote.opportunity_id) { const error = new Error('No tiene acceso a esta cotización.'); error.status = 403; throw error; }
-    await ensureOpportunityAccess(database, quote.opportunity_id, profile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW);
+    try { await ensureOpportunityAccess(database, quote.opportunity_id, profile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW); } catch (error) {
+      // Quien ve la segunda oportunidad de una cotización mixta también la ve.
+      if (!quote.paired_opportunity_id) throw error;
+      await ensureOpportunityAccess(database, quote.paired_opportunity_id, profile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW);
+    }
   }
   const [posts, lines] = await Promise.all([
     must(database.from('psi_quote_guard_posts').select('name,start_time,end_time,day_types,guards,modality,position').eq('quote_id', id).order('position', { ascending: true })),
@@ -5112,9 +5285,15 @@ app.get('/api/agt003/quotes', async (req, res) => {
     let query = database.from('psi_quotes').select('id,opportunity_id,client_name,title,status,created_by,created_at,updated_at').order('updated_at', { ascending: false }).limit(200);
     if (opportunityId) {
       await ensureOpportunityAccess(database, opportunityId, currentProfile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW);
-      query = query.eq('opportunity_id', opportunityId);
-    } else if (!globalCrmScopeRoles.has(currentProfile.role)) {
-      query = query.eq('created_by', currentProfile.id);
+      // La cotización mixta también se ve en su segunda oportunidad (la de proyecto o la de seguridad física).
+      query = await hasQuoteColumns236(database)
+        ? query.or(`opportunity_id.eq.${opportunityId},paired_opportunity_id.eq.${opportunityId}`)
+        : query.eq('opportunity_id', opportunityId);
+    } else {
+      // Juan, 2026-11-25: la lista de Cotizar es de las cotizaciones sueltas; la que ya tiene oportunidad vive dentro
+      // de la oportunidad.
+      query = query.is('opportunity_id', null);
+      if (!globalCrmScopeRoles.has(currentProfile.role)) query = query.eq('created_by', currentProfile.id);
     }
     const { data, error } = await query;
     if (error) { if (error.code === '42P01') return res.json({ quotes: [], motivo: 'Las tablas del cotizador todavía no existen (migración 204).' }); throw error; }
@@ -5148,7 +5327,10 @@ app.post('/api/agt003/quotes', async (req, res) => {
       clientName ||= opportunity.company_name || '';
     }
     const title = typeof req.body?.title === 'string' ? req.body.title.trim().slice(0, 200) || null : null;
-    const quote = await must(database.from('psi_quotes').insert({ opportunity_id: opportunityId, client_name: clientName || null, title, guard_rates: rates.guardRates, tech_rates: rates.techRates, created_by: currentProfile.id }).select('id').single());
+    const row = { opportunity_id: opportunityId, client_name: clientName || null, title, guard_rates: rates.guardRates, tech_rates: rates.techRates, created_by: currentProfile.id };
+    const terms = deliveryTermsOf(req.body);
+    if (terms !== undefined && await hasQuoteColumns236(database)) row.tech_delivery_terms = terms;
+    const quote = await must(database.from('psi_quotes').insert(row).select('id').single());
     await saveQuoteItems(database, quote.id, input);
     res.status(201).json(await loadQuote(database, quote.id, currentProfile));
   } catch (error) { sendError(res, error, error?.status || 400); }
@@ -5167,6 +5349,8 @@ app.put('/api/agt003/quote', async (req, res) => {
     const patch = { guard_rates: rates.guardRates, tech_rates: rates.techRates, updated_at: new Date().toISOString() };
     if (typeof req.body?.client_name === 'string') patch.client_name = req.body.client_name.trim().slice(0, 200) || null;
     if (typeof req.body?.title === 'string') patch.title = req.body.title.trim().slice(0, 200) || null;
+    const terms = deliveryTermsOf(req.body);
+    if (terms !== undefined && await hasQuoteColumns236(database)) patch.tech_delivery_terms = terms;
     // Ligar a una oportunidad (una cotización rápida del menú que ya tiene cliente en el CRM).
     if (typeof req.body?.opportunity_id === 'string' && req.body.opportunity_id.trim() && req.body.opportunity_id.trim() !== existing.opportunity_id) {
       const opportunity = await ensureOpportunityAccess(database, req.body.opportunity_id.trim(), currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
@@ -5178,11 +5362,89 @@ app.put('/api/agt003/quote', async (req, res) => {
     res.json(await loadQuote(database, id, currentProfile));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
+// Juan, 2026-11-25: "se pueden guardar pero luego no se pueden eliminar; deberíamos tener un botón de eliminar y otro
+// de asignar a oportunidad". Las dos acciones salen de la lista, sin abrir el editor. Sólo quien hizo la cotización
+// (o gerencia y administración) la borra o la liga. Borrar se lleva sus puestos y líneas (on delete cascade); el valor
+// que ya se pasó a una oportunidad se queda en la oportunidad.
+function requireQuoteOwner(quote, profile, message) {
+  if (quote.created_by !== profile.id && !globalCrmScopeRoles.has(profile.role)) { const error = new Error(message); error.status = 403; throw error; }
+}
+app.delete('/api/agt003/quote', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireQuoteWriter(currentProfile);
+    const database = requireDb();
+    const id = String(req.query.id || '').trim();
+    if (!id) { const error = new Error('Debe indicar la cotización.'); error.status = 400; throw error; }
+    const existing = await loadQuote(database, id, currentProfile);
+    requireQuoteOwner(existing, currentProfile, 'Sólo quien hizo la cotización la puede eliminar.');
+    await must(database.from('psi_quotes').delete().eq('id', id).select('id'));
+    res.json({ id, deleted: true });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+app.post('/api/agt003/quote/link', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireQuoteWriter(currentProfile);
+    const database = requireDb();
+    const id = String(req.query.id || '').trim();
+    const opportunityId = typeof req.body?.opportunity_id === 'string' ? req.body.opportunity_id.trim() : '';
+    if (!id || !opportunityId) { const error = new Error('Debe indicar la cotización y la oportunidad.'); error.status = 400; throw error; }
+    const existing = await loadQuote(database, id, currentProfile);
+    requireQuoteOwner(existing, currentProfile, 'Sólo quien hizo la cotización la puede ligar a una oportunidad.');
+    const opportunity = await ensureOpportunityAccess(database, opportunityId, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+    if (opportunity.service_type_code === 'licitacion_publica') { const error = new Error('Las licitaciones toman su valor del proceso, no de una cotización.'); error.status = 400; throw error; }
+    const patch = { opportunity_id: opportunity.id, updated_at: new Date().toISOString() };
+    if (!existing.client_name) patch.client_name = opportunity.company_name || null;
+    await must(database.from('psi_quotes').update(patch).eq('id', id).select('id').single());
+    res.json({ id, opportunity_id: opportunity.id, client_name: patch.client_name ?? existing.client_name ?? null });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
 
-// AGT-003 — la cotización le pone el valor a su oportunidad (entrega 4; Juan, 2026-11-16). La oportunidad tiene un solo
-// valor: vigilancia = lo mensual antes de IVA; tecnología = el total antes de IVA; mixta = lo mensual más la tecnología
-// repartida en 12 meses (regla en src/vigia/quote-proposal.js). Se toma de la cotización GUARDADA, con sus tarifas, y
-// sólo en una oportunidad abierta: el valor de una ganada o perdida ya es historia de ventas.
+// AGT-003 — la cotización le pone el valor a su oportunidad (entrega 4; Juan, 2026-11-16): vigilancia = lo mensual antes
+// de IVA; tecnología = el total antes de IVA (regla en src/vigia/quote-proposal.js). Se toma de la cotización GUARDADA,
+// con sus tarifas, y sólo en oportunidades abiertas: el valor de una ganada o perdida ya es historia de ventas.
+//
+// Cotización mixta (Juan, 2026-11-25): "se deben hacer dos oportunidades diferentes o que el sistema las divida para
+// poder tener seguimiento de seguridad física y de proyectos independiente". La vigilancia va a la oportunidad de
+// seguridad física y la tecnología a una de tipo «proyecto» del mismo cliente. La segunda es, en este orden: la que la
+// cotización ya tiene guardada; una abierta del mismo cliente, del mismo comercial y del tipo que falta (la más
+// reciente); o una nueva que nace con los datos de la primera. Queda guardada en la cotización.
+async function findOrCreatePairedOpportunity(database, profile, quote, primary, serviceType) {
+  if (quote.paired_opportunity_id) {
+    const { data } = await database.from('psi_sales_opportunities').select('id,deleted_at').eq('id', quote.paired_opportunity_id).maybeSingle();
+    if (data && !data.deleted_at) return { opportunity: await ensureOpportunityAccess(database, data.id, profile, ACTIONS.CRM_OPPORTUNITY_EDIT), created: false };
+  }
+  let query = database.from('psi_sales_opportunities').select('id').is('deleted_at', null).eq('owner_id', primary.owner_id)
+    .eq('service_type_code', serviceType).not('stage_code', 'in', '(aprobado,descartado,perdido)').neq('id', primary.id)
+    .order('updated_at', { ascending: false }).limit(1);
+  query = primary.client_id ? query.eq('client_id', primary.client_id) : query.eq('company_name', primary.company_name);
+  const [found] = await must(query);
+  if (found) return { opportunity: await ensureOpportunityAccess(database, found.id, profile, ACTIONS.CRM_OPPORTUNITY_EDIT), created: false };
+
+  await requireOpportunityAction(database, profile, primary.owner_id, ACTIONS.CRM_OPPORTUNITY_CREATE);
+  const number = `SN-COT-${String(quote.id).replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+  const payload = cleanOpportunity({
+    company_name: primary.company_name, owner_id: primary.owner_id, service_type_code: serviceType,
+    stage_code: primary.stage_code, next_action_at: primary.next_action_at, customer_segment: primary.customer_segment,
+    regional_nombre: primary.regional_nombre, sede: primary.sede, quote_city: primary.quote_city, economic_sector: primary.economic_sector,
+    decision_maker_name: primary.decision_maker_name, decision_maker_email: primary.decision_maker_email, decision_maker_phone: primary.decision_maker_phone,
+    observaciones: `Creada por el sistema al dividir la cotización mixta ${number}: ${serviceType === TECH_OPPORTUNITY_TYPE ? 'la tecnología' : 'la vigilancia'} se sigue aparte.`,
+    external_source: 'cotizador',
+  }, primary.regional_nombre);
+  const requestedClientId = primary.client_id || (await findClientMasterByName(database, primary.company_name))?.id || null;
+  const authorizedSiblingIds = await prepareClientForNewOpportunity(database, profile, payload, requestedClientId);
+  const created = await persistSalesOpportunity(database, {
+    mode: 'create', opportunityId: null, actorProfileId: profile.id, requestedClientId,
+    opportunity: payload, client: pickClientMasterFields(payload), authorizedSiblingIds,
+  });
+  return { opportunity: await ensureOpportunityAccess(database, created.id, profile, ACTIONS.CRM_OPPORTUNITY_EDIT), created: true };
+}
+async function setOpportunityValue(database, opportunity, value, explanation, extra = {}) {
+  const before = await must(database.from('psi_sales_opportunities').select('offer_value').eq('id', opportunity.id).single());
+  await must(database.from('psi_sales_opportunities').update({ offer_value: value }).eq('id', opportunity.id).select('id').single());
+  return { opportunity_id: opportunity.id, company_name: opportunity.company_name, service_type_code: opportunity.service_type_code, previous_value: before?.offer_value ?? null, offer_value: value, explanation, created: false, ...extra };
+}
 app.post('/api/agt003/quote/use-in-opportunity', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -5193,11 +5455,26 @@ app.post('/api/agt003/quote/use-in-opportunity', async (req, res) => {
     const opportunity = await ensureOpportunityAccess(database, quote.opportunity_id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     if (opportunity.service_type_code === 'licitacion_publica') { const error = new Error('Las licitaciones toman su valor del proceso, no de una cotización.'); error.status = 400; throw error; }
     if (CHAT_CLOSED_STAGES.has(opportunity.stage_code)) { const error = new Error('La oportunidad ya está cerrada: su valor no se cambia desde una cotización.'); error.status = 409; throw error; }
-    const computed = opportunityValueFromQuote(quote.totals);
-    if (!computed) { const error = new Error('La cotización no tiene puestos ni líneas.'); error.status = 400; throw error; }
-    const before = await must(database.from('psi_sales_opportunities').select('offer_value').eq('id', opportunity.id).single());
-    await must(database.from('psi_sales_opportunities').update({ offer_value: computed.value }).eq('id', opportunity.id).select('id').single());
-    res.json({ opportunity_id: opportunity.id, previous_value: before?.offer_value ?? null, offer_value: computed.value, basis: computed.basis, explanation: computed.explanation });
+    const values = opportunityValuesFromQuote(quote.totals);
+    if (!values) { const error = new Error('La cotización no tiene puestos ni líneas.'); error.status = 400; throw error; }
+    if (!values.mixed) {
+      const only = values.guard || values.tech;
+      return res.json({ results: [await setOpportunityValue(database, opportunity, only.value, only.explanation, { part: values.guard ? 'vigilancia' : 'tecnologia' })] });
+    }
+    if (!await hasQuoteColumns236(database)) { const error = new Error('La división de cotizaciones mixtas todavía no está activa (migración 236).'); error.status = 409; throw error; }
+    // La primera oportunidad se queda con lo suyo: si es de proyecto, la tecnología; si no, la vigilancia.
+    const primaryIsTech = opportunity.service_type_code === TECH_OPPORTUNITY_TYPE;
+    const paired = await findOrCreatePairedOpportunity(database, currentProfile, quote, opportunity, primaryIsTech ? GUARD_OPPORTUNITY_TYPE : TECH_OPPORTUNITY_TYPE);
+    if (quote.paired_opportunity_id !== paired.opportunity.id) await must(database.from('psi_quotes').update({ paired_opportunity_id: paired.opportunity.id }).eq('id', quote.id).select('id').single());
+    const guardTarget = primaryIsTech ? paired.opportunity : opportunity;
+    const techTarget = primaryIsTech ? opportunity : paired.opportunity;
+    const results = [];
+    for (const [part, target, value] of [['vigilancia', guardTarget, values.guard], ['tecnologia', techTarget, values.tech]]) {
+      const created = target.id === paired.opportunity.id && paired.created;
+      if (CHAT_CLOSED_STAGES.has(target.stage_code)) { results.push({ part, opportunity_id: target.id, company_name: target.company_name, service_type_code: target.service_type_code, skipped: 'La oportunidad ya está cerrada: su valor no se cambió.', created }); continue; }
+      results.push(await setOpportunityValue(database, target, value.value, value.explanation, { part, created }));
+    }
+    res.json({ results });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
@@ -5230,6 +5507,51 @@ app.get('/api/agt003/avancys/cobro-por-comercial', async (req, res) => {
     if (error?.codigo) {
       return res.json({ mes: String(req.query.mes || ''), facturas: 0, estados: [], comerciales: [], as_of: null, motivo: `Avancys no respondio: ${error.codigo}` });
     }
+    sendError(res, error, error?.status || 400);
+  }
+});
+
+// AGT-003 — comisiones por pagos recibidos (Juan, 2026-11-25): «se les paga por lo que ya haya pagado el cliente; si
+// paga parcial se le paga parcial». Lee de Avancys lo que entró a cartera en el mes y calcula con src/vigia/comisiones.js.
+// El salario mínimo sale de las tarifas del cotizador vigentes a la fecha de cada factura. Es una REFERENCIA: el número
+// que se paga es el de cartera. Mismo acceso que el cobro por comercial.
+app.get('/api/agt003/avancys/comisiones', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireCommercialBehaviorAccess(currentProfile);
+    const mes = String(req.query.mes || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(mes)) { const error = new Error('Debe indicar el mes en formato AAAA-MM.'); error.status = 400; throw error; }
+    res.set('Cache-Control', 'private, no-store');
+    const database = requireDb();
+    if (req.query.guardada === '1') {
+      const guardado = await leerGuardado(database, `comisiones:${mes}`);
+      if (guardado) return res.json(guardado);
+    }
+    const lector = crearLectorAvancys();
+    if (!lector) return res.json({ mes, comerciales: [], motivo: 'Avancys no esta configurado en este ambiente.' });
+    const leido = await lector.pagosDelMes({ mes });
+    const filasTarifa = (await readQuoteRates(database) || []).filter(row => row.kind === 'vigilancia');
+    const salarioMinimoDe = dia => normalizeGuardRates(ratesInEffect(filasTarifa, String(dia || '').slice(0, 10))?.params || DEFAULT_GUARD_RATES).smlmv;
+    // Regla base 2026: la firma del contrato (archivo de contratos, migración 238), la lista de la tabla de Juan Carlos
+    // Martínez (migración 239) y quién cobra con la tabla de licitaciones (su perfil del CRM es de licitaciones). Sin
+    // alguna de las tablas, el cálculo sigue y lo que falta se dice.
+    const tolerante = async consulta => { const { data, error } = await consulta; if (error && error.code !== '42P01') throw error; return data || []; };
+    const contratos = await tolerante(database.from('psi_client_contracts').select('nit,fecha_inicio,fecha_ultima_renovacion'));
+    const mitad = await tolerante(database.from('psi_commission_half_table_clients').select('nit'));
+    const equivalencias = await tolerante(database.from('psi_avancys_salesperson_map').select('odoo_user_id,profile_id'));
+    const perfilesLicitaciones = new Set((await tolerante(database.from('psi_sales_profiles').select('id,commercial_area').eq('commercial_area', 'licitacion_publica'))).map(fila => fila.id));
+    const calculo = calcularComisiones({
+      recaudos: leido.recaudos, facturas: leido.facturas, servicioMensual: leido.servicioMensual, salarioMinimoDe, mes,
+      inicioContrato: Object.fromEntries(contratos.map(fila => [fila.nit, inicioDeComision(fila)]).filter(([, inicio]) => inicio)),
+      primerServicio: leido.primerServicio || {}, primeraMonitoreo: leido.primeraMonitoreo || {}, ultimoAbono: leido.ultimoAbono || {},
+      nitsTablaMitad: new Set(mitad.map(fila => fila.nit)),
+      comercialesLicitaciones: new Set(equivalencias.filter(fila => perfilesLicitaciones.has(fila.profile_id)).map(fila => fila.odoo_user_id)),
+    });
+    const respuesta = { mes, ...calculo, tabla_mitad_cargada: mitad.length, contratos_cargados: contratos.length, recaudos: leido.recaudos.length, recortado: leido.recortado, as_of: leido.as_of, motivo: null, medido_en: new Date().toISOString() };
+    await guardarTorre(database, `comisiones:${mes}`, respuesta);
+    return res.json(respuesta);
+  } catch (error) {
+    if (error?.codigo) return res.json({ mes: String(req.query.mes || ''), comerciales: [], motivo: `Avancys no respondio: ${error.codigo}` });
     sendError(res, error, error?.status || 400);
   }
 });
@@ -5621,8 +5943,24 @@ async function applyChatAction(database, profile, action) {
   }
   if (action.tipo === 'proximo_seguimiento') {
     await ensureOpportunityAccess(database, action.opportunity_id, profile, ACTIONS.CRM_OPPORTUNITY_EDIT);
-    await must(database.from('psi_sales_opportunities').update({ next_action_at: chatDayToIso(action.fecha) }).eq('id', action.opportunity_id).select('id').single());
-    return { opportunity_id: action.opportunity_id };
+    // Agendar un contacto reactiva una oportunidad congelada (Juan, 2026-11-25: «active la oportunidad y
+    // agéndeme una llamada»): congelada no sale en Mi día, y la llamada se perdía. Queda la constancia en la auditoría.
+    const { data: current } = await database.from('psi_sales_opportunities').select('frozen_until').eq('id', action.opportunity_id).maybeSingle();
+    const patch = { next_action_at: chatDayToIso(action.fecha) };
+    const wasFrozen = isFrozen(current);
+    if (wasFrozen) Object.assign(patch, { frozen_until: null, frozen_reason: null, frozen_at: null, frozen_by: null });
+    await must(database.from('psi_sales_opportunities').update(patch).eq('id', action.opportunity_id).select('id').single());
+    if (wasFrozen) {
+      const { error } = await database.from('psi_sales_opportunity_audit_logs').insert({ opportunity_id: action.opportunity_id, changed_by: profile.id, field_name: 'frozen_until', old_value: String(current.frozen_until), new_value: null, notes: 'Reactivada desde el chat de Vig-IA al agendar un contacto' });
+      if (error) console.error('No se pudo registrar la reactivación en la auditoría', error);
+      // La reactivación queda también en la historia del cliente, como el congelamiento (cambio_estado). Sin esta nota,
+      // Vig-IA leía «Congelada hasta …» como lo último que pasó y le ofrecía al cliente esperar hasta esa fecha
+      // (Juan, 2026-11-25).
+      const nota = `Reactivada: próxima gestión el ${String(action.fecha).slice(0, 10).split('-').reverse().join('/')}.`;
+      const { error: historia } = await database.from('psi_sales_interactions').insert({ opportunity_id: action.opportunity_id, created_by: profile.id, interaction_type: 'cambio_estado', notes: nota, occurred_at: new Date().toISOString() });
+      if (historia) console.error('No se pudo registrar la reactivación en la historia', historia);
+    }
+    return { opportunity_id: action.opportunity_id, ...(wasFrozen ? { reactivated: true } : {}) };
   }
   if (action.tipo === 'actualizar_datos') {
     const current = await loadLeadAnalysisOpportunity(database, action.opportunity_id);
@@ -7924,7 +8262,7 @@ async function readTenderOpenBoard(database, currentProfile, now = new Date()) {
     const tender = tenderByOpportunity.get(row.id) || null;
     const closeDate = (tender ? resolveCanonicalTenderDeadline(tender) : null) || row.expected_close_date || null;
     return { row, tender, closeDate: closeDate ? String(closeDate).slice(0, 10) : null };
-  }).filter(item => item.closeDate && item.closeDate >= today && !['cerrada_no_go', 'presentada', 'adjudicada', 'no_adjudicada'].includes(item.row.tender_offer_status));
+  }).filter(item => item.closeDate && item.closeDate >= today && !['cerrada_no_go', 'no_presentada', 'presentada', 'adjudicada', 'no_adjudicada'].includes(item.row.tender_offer_status));
 
   const [companyBase, documents] = await Promise.all([loadCompanyBase(database), listCompanyProcurementDocuments(database)]);
   let withoutAccess = 0;
@@ -7988,7 +8326,7 @@ async function readTenderSemana(database, currentProfile, now = new Date()) {
     .select('id,sede,company_name,tender_offer_status,stage_code,archive_note,archived_at,discarded_at,lost_at,deleted_at')
     .eq('service_type_code', 'licitacion_publica'));
   const open = opportunities.filter(row => !row.archive_note && !row.archived_at && !row.discarded_at && !row.lost_at && !row.deleted_at
-    && row.stage_code !== 'descartado' && !['cerrada_no_go', 'adjudicada', 'no_adjudicada'].includes(row.tender_offer_status));
+    && row.stage_code !== 'descartado' && !['cerrada_no_go', 'no_presentada', 'adjudicada', 'no_adjudicada'].includes(row.tender_offer_status));
   const ids = open.map(row => row.id);
   const { data: results } = ids.length ? await database.from('psi_tender_offer_results').select('opportunity_id').in('opportunity_id', ids) : { data: [] };
   const withResult = new Set((results || []).map(row => row.opportunity_id));
@@ -8029,7 +8367,7 @@ async function readTenderMiDia(database, currentProfile, now = new Date()) {
     .select('id,sede,company_name,owner_id,tender_offer_status,stage_code,expected_close_date,archive_note,archived_at,discarded_at,lost_at,deleted_at')
     .eq('service_type_code', 'licitacion_publica'));
   const open = opportunities.filter(row => !row.archive_note && !row.archived_at && !row.discarded_at && !row.lost_at && !row.deleted_at
-    && row.stage_code !== 'descartado' && !['cerrada_no_go', 'adjudicada', 'no_adjudicada'].includes(row.tender_offer_status));
+    && row.stage_code !== 'descartado' && !['cerrada_no_go', 'no_presentada', 'adjudicada', 'no_adjudicada'].includes(row.tender_offer_status));
   const ids = open.map(row => row.id);
   const { data: results } = ids.length ? await database.from('psi_tender_offer_results').select('opportunity_id').in('opportunity_id', ids) : { data: [] };
   const withResult = new Set((results || []).map(row => row.opportunity_id));
@@ -10443,6 +10781,28 @@ app.post('/api/users', async (req, res) => {
   } catch (error) { sendAuthError(res, error); }
 });
 
+// Juan, 2026-11-25: cada persona carga y corrige su propio WhatsApp desde el menú del perfil (sale en la propuesta
+// que se descarga en Cotizar). Sólo ese dato: nombre, correo, rol y áreas siguen siendo de Usuarios (administración),
+// porque de ellos dependen los accesos. Acepta el número como lo escribe un comercial ("300 123 4567"): diez dígitos
+// que empiezan por 3 son un celular de Colombia (+57); lo demás tiene que venir con su indicativo.
+export function selfWhatsappPhone(value) {
+  if (value === undefined || value === null) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const digits = raw.replace(/[\s().-]/g, '');
+  const candidate = /^3\d{9}$/.test(digits) ? `+57${digits}` : /^57\d{10}$/.test(digits) ? `+${digits}` : digits;
+  try { return normalizeWhatsappPhone(candidate); } catch { throw accessValidationError('Escriba el celular con sus 10 dígitos (300 123 4567) o, si es de otro país, con su indicativo (+1 305 555 0100).'); }
+}
+app.put('/api/me/whatsapp', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    if (!currentProfile?.id || currentProfile.identity_type === 'agent') { const error = new Error('Este perfil no tiene WhatsApp.'); error.status = 403; throw error; }
+    const whatsapp_phone = selfWhatsappPhone(req.body?.whatsapp_phone);
+    const database = requireDb();
+    const row = await must(database.from('psi_sales_profiles').update({ whatsapp_phone, updated_at: new Date().toISOString() }).eq('id', currentProfile.id).select('id,whatsapp_phone').single());
+    res.json({ whatsapp_phone: row.whatsapp_phone ?? null });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
 app.patch('/api/users', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);

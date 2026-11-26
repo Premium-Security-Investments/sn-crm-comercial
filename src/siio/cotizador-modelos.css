@@ -1,0 +1,67 @@
+/* Cotizador de modelos de servicio (Gerencia). Marca SN: azul para mandar, hojas blancas para trabajar, amarillo solo
+   para el botón principal. Lo interno va con borde punteado ámbar y se esconde en la vista cliente. */
+.cm { display: grid; gap: 16px; color: #36465e; }
+.cm-barra { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.cm-barra strong { display: block; color: #10213d; font-size: 18px; }
+.cm-barra small { color: #5d6b80; }
+.cm-acciones { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cm-acciones select { padding: 7px 10px; border: 1px solid #c9d6e6; border-radius: 8px; background: #fff; color: #10213d; font: inherit; }
+.cm-seg { display: inline-flex; background: #e7effc; border-radius: 8px; padding: 3px; }
+.cm-seg button { border: 0; background: transparent; padding: 6px 12px; border-radius: 6px; font: inherit; color: #174ea6; cursor: pointer; }
+.cm-seg button.on { background: #0b2a5b; color: #fff; font-weight: 700; }
+.cm-principal { background: #ffe001; color: #0b2a5b; border: 0; border-radius: 8px; padding: 8px 14px; font: inherit; font-weight: 700; cursor: pointer; }
+.cm-grilla { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 16px; align-items: start; }
+.cm-hoja { background: #fff; border-radius: 14px; box-shadow: 0 1px 2px rgba(16,33,61,.05), 0 8px 24px rgba(16,33,61,.06); padding: 16px 18px; margin-bottom: 16px; }
+.cm-hoja h2 { margin: 0 0 10px; font-size: 14px; color: #10213d; }
+.cm-hoja h2 small { display: block; margin-top: 2px; font-weight: 400; font-size: 12px; color: #5d6b80; }
+.cm-hoja h3 { margin: 16px 0 6px; font-size: 13px; color: #10213d; }
+.cm-hoja label { display: block; margin: 10px 0 4px; font-size: 12px; color: #52627a; }
+.cm-chk { display: flex !important; justify-content: space-between; align-items: center; margin: 0 !important; padding: 5px 0; border-bottom: 1px solid #e3e9f2; color: #10213d !important; font-size: 13px !important; }
+.cm-campo { display: inline-flex; align-items: center; gap: 6px; }
+.cm-campo input { width: 78px; padding: 6px 8px; border: 1px solid #c9d6e6; border-radius: 8px; font: inherit; color: #10213d; }
+.cm-campo small { color: #5d6b80; }
+.cm-par { display: flex; gap: 6px; }
+.cm-ops { display: flex; gap: 4px; }
+.cm-ops button { flex: 1; padding: 6px 0; border: 1px solid #c9d6e6; border-radius: 8px; background: #fff; color: #10213d; font: inherit; cursor: pointer; }
+.cm-ops button.on { background: #0b2a5b; border-color: #0b2a5b; color: #fff; font-weight: 700; }
+.cm input[type=range] { width: 100%; }
+.cm-nota { display: block; margin-top: 8px; font-size: 11.5px; color: #5d6b80; }
+.cm-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.cm-k { background: #fff; border-radius: 14px; box-shadow: 0 1px 2px rgba(16,33,61,.05), 0 8px 24px rgba(16,33,61,.06); padding: 14px; }
+.cm-k small, .cm-k span { display: block; font-size: 12px; color: #5d6b80; }
+.cm-k b { display: block; margin: 4px 0; font-size: 24px; color: #10213d; }
+.cm-k.cm-dest { background: #0b2a5b; }
+.cm-k.cm-dest small, .cm-k.cm-dest span { color: #cfd9ea; }
+.cm-k.cm-dest b { color: #fff; }
+.cm-bien { color: #166534 !important; }
+.cm-mal { color: #b91c1c !important; }
+.cm-tabla { overflow-x: auto; }
+.cm table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.cm th { padding: 6px 8px; border-bottom: 1px solid #e3e9f2; text-align: right; font-size: 12px; font-weight: 600; color: #5d6b80; }
+.cm td { padding: 7px 8px; border-bottom: 1px solid #e3e9f2; text-align: right; color: #10213d; font-variant-numeric: tabular-nums; }
+.cm th:first-child, .cm td:first-child { text-align: left; }
+.cm tfoot td { font-weight: 700; border-top: 2px solid #10213d; }
+.cm tr.cm-sel td { background: #f4f7fb; }
+.cm tr.cm-fuera td { color: #8a96a8; }
+.cm-dos { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.cm-interna { border: 2px dashed #ecd9b0; background: #fffdf7; }
+.cm-insignia { display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 6px; background: #fdf1dd; color: #92400e; font-size: 11px; font-weight: 700; }
+.cm-vista-cliente .cm-interna, .cm-vista-cliente .cm-solo-interna { display: none; }
+@media (max-width: 1100px) {
+  .cm-grilla { grid-template-columns: 1fr; }
+  .cm-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cm-dos { grid-template-columns: 1fr; }
+}
+
+/* Las reglas globales de SIIO (styles.css) dan 100 % de ancho a todo input y select, parten las cifras de las celdas en
+   cualquier punto y ponen los encabezados en mayúsculas con relleno grande. Dentro del cotizador se corrigen. */
+.cm { font-size: 14px; }
+.cm input[type=checkbox] { width: auto; margin: 0; padding: 0; flex: none; }
+.cm-chk > span { display: inline-flex; align-items: center; gap: 8px; }
+.cm-acciones select { width: auto; min-width: 240px; padding: 7px 10px; border-radius: 8px; }
+.cm .cm-campo input { width: 82px; padding: 6px 8px; border-radius: 8px; }
+.cm input[type=range] { padding: 0; border: 0; }
+.cm table { font-size: 13px; }
+.cm th { padding: 6px 8px; background: transparent; text-transform: none; letter-spacing: 0; white-space: normal; vertical-align: bottom; }
+.cm td { padding: 7px 8px; overflow-wrap: normal; white-space: nowrap; }
+.cm td:first-child { white-space: normal; min-width: 120px; }

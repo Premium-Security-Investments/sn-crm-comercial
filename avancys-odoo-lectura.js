@@ -25,11 +25,19 @@ const CAMPOS = Object.freeze({
   // sólo esta lectura y no la facturación por cliente de la Torre, que usa `factura`.
   facturaPago: Object.freeze(['id', 'partner_id', 'invoice_user_id', 'amount_untaxed', 'amount_total', 'amount_residual', 'payment_state', 'move_type', 'invoice_date', 'write_date']),
   cliente: Object.freeze(['id', 'name', 'ref_num', 'ref_type_id', 'verification_code', 'is_company', 'user_id', 'state_id', 'write_date']),
+  // Comisiones por pagos recibidos (Juan, 2026-11-25): los abonos a cartera del mes y las facturas que nombran.
+  recaudo: Object.freeze(['id', 'date', 'name', 'ref', 'credit', 'journal_id', 'write_date']),
+  // Catálogo para el cotizador (entrega 5a, 2026-11-26).
+  producto: Object.freeze(['id', 'default_code', 'name', 'categ_id', 'type', 'standard_price', 'uom_id', 'write_date']),
+  facturaComision: Object.freeze(['id', 'name', 'partner_id', 'amount_untaxed', 'amount_total', 'amount_residual', 'move_type', 'invoice_date', 'journal_id', 'write_date']),
 });
 
 const MODELO = Object.freeze({
   factura: 'account.move',
   facturaPago: 'account.move',
+  facturaComision: 'account.move',
+  recaudo: 'account.move.line',
+  producto: 'product.product',
   orden: 'project.service.order.line.invoice',
   puesto: 'hr.roster.puesto',
   contrato: 'project.project',
@@ -576,6 +584,206 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
   }
 
   /**
+   * El comercial de cada cliente y las fechas de su contrato, por NIT (contratos de clientes; Juan, 2026-11-26).
+   * El comercial es el asignado al cliente en Avancys. Las fechas son las del contrato (`project.project`): al
+   * 2026-11-25 estaban vacías en los 2.808 contratos, así que hoy sólo se devuelven cuando alguien las haya llenado.
+   */
+  async function clientesPorNit({ nits }) {
+    const lista = [...new Set((nits || []).map(normalizarIdentificacion).filter(Boolean))];
+    const salida = {};
+    for (let i = 0; i < lista.length; i += 300) {
+      const clientes = await leer('cliente', [['ref_num', 'in', lista.slice(i, i + 300)]], { limite: 1000 });
+      const porId = new Map(clientes.map(c => [c.id, c]));
+      const contratos = porId.size ? await leer('contrato', [['partner_id', 'in', [...porId.keys()]]], { limite: 2000 }) : [];
+      for (const cliente of clientes) {
+        const nit = normalizarIdentificacion(cliente.ref_num);
+        if (!nit || salida[nit]) continue;
+        const suyos = contratos.filter(c => unoAMuchos(c.partner_id) === cliente.id && (c.date_start || c.date));
+        const inicio = suyos.map(c => c.date_start).filter(Boolean).sort()[0] || null;
+        const fin = suyos.map(c => c.date).filter(Boolean).sort().slice(-1)[0] || null;
+        salida[nit] = Object.freeze({
+          comercial_id: unoAMuchos(cliente.user_id),
+          comercial: Array.isArray(cliente.user_id) ? texto(cliente.user_id[1]) : null,
+          fecha_inicio: inicio ? String(inicio).slice(0, 10) : null,
+          fecha_fin: fin ? String(fin).slice(0, 10) : null,
+        });
+      }
+    }
+    return Object.freeze(salida);
+  }
+
+  /** Los productos vendibles y activos de Avancys, con su costo (catálogo del cotizador; entrega 5a). */
+  async function catalogoDeProductos() {
+    const filas = await leer('producto', [['sale_ok', '=', true], ['active', '=', true]], { limite: MAX_FILAS_PAGINADO, orden: 'id asc', pagina: 500 });
+    return Object.freeze({
+      productos: Object.freeze(filas.map(p => Object.freeze({
+        codigo: texto(p.default_code),
+        nombre: texto(p.name) || '',
+        categoria: Array.isArray(p.categ_id) ? texto(p.categ_id[1]) || '' : '',
+        tipo: texto(p.type),
+        costo: Number(p.standard_price) || 0,
+        unidad: Array.isArray(p.uom_id) ? texto(p.uom_id[1]) : null,
+        actualizado: p.write_date ? String(p.write_date).slice(0, 10) : null,
+      }))),
+      as_of: corteDe([filas]),
+    });
+  }
+
+  // Agrupación con mínimo de una fecha, para no traer miles de filas (primer servicio, primera factura de monitoreo).
+  async function minimoPorCliente(clave, dominio, campoCliente, campoFecha) {
+    const id = await autenticar();
+    const nombrado = { lazy: false, limit: 20000 };
+    if (config.companyId) nombrado.context = { allowed_company_ids: [config.companyId] };
+    const grupos = await rpc('object', 'execute_kw', [config.database, id, config.clave, MODELO[clave], 'read_group',
+      [dominio, [`${campoFecha}:min`], [campoCliente]], nombrado]);
+    if (!Array.isArray(grupos)) falla('AVANCYS_RESPUESTA_INVALIDA');
+    const salida = {};
+    for (const g of grupos) {
+      const cliente = unoAMuchos(g[campoCliente]);
+      if (cliente !== null && g[campoFecha]) salida[cliente] = String(g[campoFecha]).slice(0, 10);
+    }
+    return salida;
+  }
+
+  /**
+   * Lo que entró a cartera en un mes y las facturas que paga (comisiones; Juan, 2026-11-25: «se les paga por lo que ya
+   * haya pagado el cliente; si paga parcial se le paga parcial»).
+   *
+   * Nuestro usuario de lectura no ve la conciliación parcial (`account.partial.reconcile`). Pero cada abono a la cuenta
+   * de clientes (1305) trae en su texto el número de la factura que paga («AV04134 - SN385199»). Medido el 2026-11-25
+   * contra el estado de pago de Avancys: en 2.656 de 2.718 facturas de septiembre y octubre la suma de esos abonos da
+   * exacta. La cuenta se filtra por código: filtrar por tipo de cuenta pide un permiso que no tenemos.
+   *
+   * Sólo diarios de banco, caja y cruces: una nota crédito (diario de ventas) baja la factura, no es un pago.
+   */
+  async function pagosDelMes({ mes }) {
+    if (!/^\d{4}-\d{2}$/.test(String(mes || ''))) falla('AVANCYS_MES_INVALIDO');
+    const [anio, numeroMes] = String(mes).split('-').map(Number);
+    const desde = `${mes}-01`;
+    const hasta = new Date(Date.UTC(anio, numeroMes, 0)).toISOString().slice(0, 10);
+    const recaudos = await leer('recaudo',
+      [['account_id.code', '=like', '1305%'], ['credit', '>', 0], ['date', '>=', desde], ['date', '<=', hasta],
+       ['parent_state', '=', 'posted'], ['journal_id.type', 'in', ['bank', 'cash', 'general']]],
+      { limite: MAX_FILAS_PAGINADO, orden: 'id asc', pagina: 400 });
+
+    const numeros = new Set();
+    for (const r of recaudos) for (const ficha of `${r.name || ''} ${r.ref || ''}`.toUpperCase().match(/\b[A-Z]{1,4}\d{4,7}\b/g) || []) numeros.add(ficha);
+    const facturasLeidas = [];
+    const lista = [...numeros];
+    for (let i = 0; i < lista.length; i += 500) {
+      facturasLeidas.push(...await leer('facturaComision',
+        [['name', 'in', lista.slice(i, i + 500)], ['move_type', 'in', ['out_invoice', 'out_refund']], ['state', '=', 'posted']],
+        { limite: MAX_FILAS_PAGINADO, orden: 'id asc', pagina: 400 }));
+    }
+
+    // El comercial que cuenta es el asignado al cliente, no quien hizo la factura (igual que el cobro por comercial).
+    const idsCliente = [...new Set(facturasLeidas.map(f => unoAMuchos(f.partner_id)).filter(id => id !== null))];
+    const comercialDelCliente = new Map();
+    const nitDelCliente = new Map();
+    for (let i = 0; i < idsCliente.length; i += 500) {
+      const lote = idsCliente.slice(i, i + 500);
+      for (const cliente of await leer('cliente', [['id', 'in', lote]], { limite: lote.length })) {
+        comercialDelCliente.set(cliente.id, cliente.user_id || false);
+        nitDelCliente.set(cliente.id, normalizarIdentificacion(cliente.ref_num));
+      }
+    }
+
+    const facturas = {};
+    const mesesServicios = new Set();
+    const clientesServicios = new Set();
+    for (const f of facturasLeidas) {
+      const numero = texto(f.name);
+      if (!numero) continue;
+      const clienteId = unoAMuchos(f.partner_id);
+      const asignado = comercialDelCliente.get(clienteId);
+      const diario = Array.isArray(f.journal_id) ? texto(f.journal_id[1]) : null;
+      facturas[numero] = Object.freeze({
+        cliente_id: clienteId,
+        cliente: Array.isArray(f.partner_id) ? (texto(f.partner_id[1]) || '').replace(/^\[[^\]]*\]\s*/, '') : null,
+        comercial_id: unoAMuchos(asignado),
+        comercial: Array.isArray(asignado) ? texto(asignado[1]) : null,
+        nit: nitDelCliente.get(clienteId) || null,
+        sin_iva: Number(f.amount_untaxed) || 0,
+        total: Number(f.amount_total) || 0,
+        pendiente: Number(f.amount_residual) || 0,
+        tipo: f.move_type,
+        fecha: f.invoice_date || null,
+        diario,
+      });
+      if (f.move_type === 'out_invoice' && f.invoice_date && /SERVICIOS/i.test(diario || '') && clienteId !== null) {
+        mesesServicios.add(String(f.invoice_date).slice(0, 7));
+        clientesServicios.add(clienteId);
+      }
+    }
+
+    // El valor mensual de cada cliente: lo facturado por Servicios en el mes de la factura pagada, neto de notas crédito.
+    const servicioMensual = {};
+    const meses = [...mesesServicios].sort();
+    const clientes = [...clientesServicios];
+    const leidasMensual = [];
+    if (meses.length) {
+      const [ultimoAnio, ultimoMes] = meses[meses.length - 1].split('-').map(Number);
+      const finUltimo = new Date(Date.UTC(ultimoAnio, ultimoMes, 0)).toISOString().slice(0, 10);
+      for (let i = 0; i < clientes.length; i += 300) {
+        const filas = await leer('facturaComision',
+          [['partner_id', 'in', clientes.slice(i, i + 300)], ['journal_id.name', 'ilike', 'SERVICIOS'], ['move_type', 'in', ['out_invoice', 'out_refund']],
+           ['state', '=', 'posted'], ['invoice_date', '>=', `${meses[0]}-01`], ['invoice_date', '<=', finUltimo]],
+          { limite: MAX_FILAS_PAGINADO, orden: 'id asc', pagina: 400 });
+        leidasMensual.push(...filas);
+        for (const f of filas) {
+          const clave = `${unoAMuchos(f.partner_id)}|${String(f.invoice_date).slice(0, 7)}`;
+          const monto = (Number(f.amount_untaxed) || 0) * (f.move_type === 'out_refund' ? -1 : 1);
+          servicioMensual[clave] = (servicioMensual[clave] || 0) + monto;
+        }
+      }
+    }
+
+    // Regla base 2026 (Juan, 2026-11-26). La vigilancia se paga 12 meses: el primer servicio del cliente en Avancys
+    // dice cuándo empezó un cliente que entró después del arranque de Avancys (agosto de 2026). El monitoreo se paga
+    // una vez, con la primera factura del cliente. Los equipos, cuando la factura queda pagada: hace falta su último
+    // abono, en cualquier mes.
+    const lineaDe = numero => String(facturas[numero]?.diario || '').toUpperCase();
+    const clientesDe = palabra => [...new Set(Object.keys(facturas).filter(n => lineaDe(n).includes(palabra) && facturas[n].tipo === 'out_invoice').map(n => facturas[n].cliente_id).filter(id => id !== null))];
+    const primerServicio = {};
+    const primeraMonitoreo = {};
+    const deServicios = clientesDe('SERVICIOS');
+    for (let i = 0; i < deServicios.length; i += 300) {
+      Object.assign(primerServicio, await minimoPorCliente('orden', [['client_id', 'in', deServicios.slice(i, i + 300)], ['fact_start_date', '!=', false]], 'client_id', 'fact_start_date'));
+    }
+    const deMonitoreo = clientesDe('MONITOREO');
+    for (let i = 0; i < deMonitoreo.length; i += 300) {
+      Object.assign(primeraMonitoreo, await minimoPorCliente('facturaComision', [['partner_id', 'in', deMonitoreo.slice(i, i + 300)], ['journal_id.name', 'ilike', 'MONITOREO'], ['move_type', '=', 'out_invoice'], ['state', '=', 'posted']], 'partner_id', 'invoice_date'));
+    }
+    const ultimoAbono = {};
+    const equipos = Object.keys(facturas).filter(n => /COMERCIALIZACI/.test(lineaDe(n)) && facturas[n].tipo === 'out_invoice' && facturas[n].pendiente <= 1);
+    for (let i = 0; i < equipos.length; i += 40) {
+      const lote = equipos.slice(i, i + 40);
+      const porNombre = lote.flatMap((numero, k) => (k < lote.length - 1 ? ['|'] : []).concat([['name', 'ilike', numero]]));
+      const abonos = await leer('recaudo', [['account_id.code', '=like', '1305%'], ['credit', '>', 0], ['parent_state', '=', 'posted'],
+        ['journal_id.type', 'in', ['bank', 'cash', 'general']], ...porNombre], { limite: MAX_FILAS_PAGINADO, orden: 'id asc', pagina: 400 });
+      for (const abono of abonos) for (const numero of lote) {
+        if (`${abono.name || ''} ${abono.ref || ''}`.toUpperCase().includes(numero) && (!ultimoAbono[numero] || abono.date > ultimoAbono[numero])) ultimoAbono[numero] = abono.date;
+      }
+    }
+
+    return Object.freeze({
+      mes,
+      primerServicio: Object.freeze(primerServicio),
+      primeraMonitoreo: Object.freeze(primeraMonitoreo),
+      ultimoAbono: Object.freeze(ultimoAbono),
+      recaudos: Object.freeze(recaudos.map(r => Object.freeze({
+        id: r.id, fecha: r.date, valor: Number(r.credit) || 0,
+        texto: [texto(r.name), texto(r.ref)].filter(Boolean).join(' '),
+        diario: Array.isArray(r.journal_id) ? texto(r.journal_id[1]) : null,
+      }))),
+      facturas: Object.freeze(facturas),
+      servicioMensual: Object.freeze(servicioMensual),
+      recortado: recaudos.length >= MAX_FILAS_PAGINADO,
+      as_of: corteDe([recaudos, facturasLeidas, leidasMensual]),
+    });
+  }
+
+  /**
    * Lo facturado en un mes, por cliente. Es lo que la Torre no tenía: su ingreso por cliente sale
    * hoy de una hoja que alguien importa, y que no es la facturación sino la provisión de cierre.
    *
@@ -717,5 +925,5 @@ export function crearLectorAvancys({ entorno = process.env, fetchImpl = globalTh
     });
   }
 
-  return Object.freeze({ origen: config.origen, database: config.database, devengadoDelMes, facturacionPorCliente, cobroPorComercial, clienteDelPuesto, puestosDelCliente, clientesDelComercial, buscarClientes });
+  return Object.freeze({ origen: config.origen, database: config.database, devengadoDelMes, facturacionPorCliente, cobroPorComercial, pagosDelMes, clientesPorNit, catalogoDeProductos, clienteDelPuesto, puestosDelCliente, clientesDelComercial, buscarClientes });
 }

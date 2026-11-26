@@ -41,6 +41,7 @@ export const EMPTY_TABS_ACCESS = Object.freeze({
   tender_lessons: false,
   study_review: false,
   study_approve: false,
+  model_quoter: false,
   read_only: false,
 });
 
@@ -84,6 +85,7 @@ export function normalizeTabsAccess(input) {
     tender_lessons: flag('tender_lessons'),
     study_review: flag('study_review'),
     study_approve: flag('study_approve'),
+    model_quoter: flag('model_quoter'),
     read_only: flag('read_only'),
   };
   const has = code => tabs.includes(code);
@@ -91,10 +93,12 @@ export function normalizeTabsAccess(input) {
   if (!has('oportunidades')) Object.assign(access, { opportunity_scope: 'propias', owns_opportunities: false, copilot: false, edit_segment: false, delete_opportunities: false });
   if (!has('licitaciones')) Object.assign(access, { tender_custody: false, tender_company: false, tender_lessons: false });
   if (!has('estudios')) Object.assign(access, { study_review: false, study_approve: false });
+  // El cotizador de modelos vive dentro de la Torre: sin la Torre no tiene efecto.
+  if (!has('torre')) access.model_quoter = false;
   if (access.read_only) {
     const blocked = tabs.filter(tab => WRITE_TABS.has(tab));
     if (blocked.length) throw accessError('Con "Solo consulta" no se pueden dar Cargar metas, Estudios de seguridad ni Usuarios y permisos.');
-    if (access.copilot || access.edit_segment || access.delete_opportunities || access.tender_custody || access.tender_company || access.tender_lessons || access.study_review || access.study_approve || access.owns_opportunities) {
+    if (access.copilot || access.edit_segment || access.delete_opportunities || access.tender_custody || access.tender_company || access.tender_lessons || access.study_review || access.study_approve || access.model_quoter || access.owns_opportunities) {
       throw accessError('Con "Solo consulta" no se pueden dar opciones que cambian información.');
     }
     if (has('oportunidades')) access.opportunity_scope = 'todas';
@@ -142,6 +146,7 @@ export function accessFromTabs(input, existingAreas = []) {
   if (access.tender_lessons) permissions.add('licitaciones_lecciones');
   if (access.study_review) permissions.add('estudios_seguridad_revisar');
   if (access.study_approve) permissions.add('estudios_seguridad_aprobar');
+  if (access.model_quoter) permissions.add('siio_cotizador_modelos');
 
   const commercialAreas = (Array.isArray(existingAreas) ? existingAreas : [])
     .filter(area => area && area.area_code === 'comercial')
@@ -187,6 +192,7 @@ export function tabsFromProfile(profile) {
     tender_lessons: permissions.has('licitaciones_lecciones'),
     study_review: permissions.has('estudios_seguridad_revisar'),
     study_approve: permissions.has('estudios_seguridad_aprobar'),
+    model_quoter: permissions.has('siio_cotizador_modelos'),
     read_only: role === 'consulta' || role === 'junta',
   };
 }

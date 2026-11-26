@@ -43,6 +43,7 @@ export const CHAT_POLICY = [
     : 'Si el comercial cuenta que ganó un negocio, propón también el formulario_cierre con los datos que haya dado, y recuérdale que lo complete: operaciones y facturación lo necesitan para montar los puestos y facturar. Hoy no es obligatorio para marcarlo ganado: no detengas la decisión de ganar por eso.',
   'Si el comercial tiene pendientes por decidir (comercial.puede_crear_oportunidades = false), no propongas crear oportunidades: explícale que primero debe ponerse al día decidiendo sus pendientes en Mi día.',
   'No cambies el valor de la oferta ni el dueño, y no descartes ni congeles oportunidades: eso sigue en el botón "Decidir" de la ficha. Descartar y congelar son decisiones de cartera, no el relato de lo que pasó con el cliente.',
+  'Una oportunidad con congelada_hasta en una fecha igual o posterior a hoy está congelada: no aparece en Mi día ni en el pipeline. Si el comercial la quiere reactivar o agenda con ella un contacto antes de esa fecha, el proximo_seguimiento la descongela al confirmarse: dilo así en la respuesta, nunca digas que ya estaba activa.',
   'Después de proponer, si a ese cliente le faltan datos del perfil (campo faltan_del_perfil) y viene al caso, pide UNO o DOS de esos datos al final de la respuesta, de forma natural. Completar el perfil le da el premio "Análisis profundo".',
   'La respuesta resume en una o dos frases lo que propones (el detalle lo ve en la tarjeta) y hace las preguntas necesarias. Si el mensaje no tiene nada para registrar (saludo, pregunta general), responde breve y deja acciones vacío.',
   'Puedes usar la conversación previa del día (historial) para entender respuestas cortas como "sí, es la de Rionegro" o "el NIT es 900…". Si una propuesta anterior quedó pendiente y el comercial la corrige, vuelve a proponer la versión corregida completa.',
@@ -87,6 +88,9 @@ function opportunityForModel({ ref, opportunity }) {
     etapa_orden: Number(opportunity.stage_order ?? 0),
     servicio: clip(opportunity.service_type_name, 80),
     proximo_seguimiento: clip(String(opportunity.next_action_at || ''), 10),
+    // Juan, 2026-11-25: pidió «active la oportunidad» de un cliente y Vig-IA contestó que estaba abierta, sin ver que
+    // seguía congelada hasta febrero. Ahora la ve.
+    ...(opportunity.frozen_until ? { congelada_hasta: clip(String(opportunity.frozen_until), 10) } : {}),
     ultimo_seguimiento: clip(String(opportunity.last_interaction_at || ''), 10),
     datos,
     faltan_del_perfil: profileCompleteness(opportunity).missing,

@@ -33,6 +33,7 @@ export type NavRoutePage =
   | 'centinel'
   | 'users'
   | 'siio'
+  | 'modelos'
   | 'programacion'
   | 'estudios'
   | 'agents';
@@ -62,6 +63,8 @@ const navGroups: readonly NavGroupDefinition[] = [
     title: 'Gerencia',
     items: [
       { href: '#/siio', label: 'Torre de Control', page: 'siio' },
+      // Cotizador de modelos de servicio (Juan, 2026-11-25): junto a la Torre, sólo con su permiso de capacidad.
+      { href: '#/modelos', label: 'Cotizador de modelos', page: 'modelos' },
     ],
   },
   {
@@ -125,6 +128,7 @@ const navGroups: readonly NavGroupDefinition[] = [
 
 const moduleActionByPage: Partial<Record<NavRoutePage, string>> = {
   siio: 'modulo_siio_gerencial',
+  modelos: 'modulo_siio_gerencial',
   centinel: 'modulo_vig_ia',
   dashboard: 'modulo_dashboard_comercial',
   dashboard2: 'modulo_dashboard_comercial',
@@ -177,6 +181,13 @@ export function canViewTenders(profile?: NavProfile) {
   return hasModuleAccess(profile, 'licitaciones');
 }
 
+/** Cotizador de modelos de servicio: la Torre más el permiso de capacidad (lleva precios, costos y márgenes). */
+export function canUseServiceModelQuoter(profile?: NavProfile) {
+  return hasModuleAccess(profile, 'modulo_siio_gerencial')
+    && profile?.role !== 'junta' && profile?.role !== 'director'
+    && Boolean(profile?.permissions?.includes('siio_cotizador_modelos'));
+}
+
 export function canAccessSiio(profile?: NavProfile) {
   return hasModuleAccess(profile, 'modulo_siio_gerencial');
 }
@@ -219,6 +230,7 @@ export function canWriteGoals(profile?: NavProfile) {
 
 export function canAccessRoute(profile: NavProfile, page: NavRoutePage) {
   if (isReadOnlyProfile(profile) && writeOnlyPages.has(page)) return false;
+  if (page === 'modelos') return canUseServiceModelQuoter(profile);
   if (page === 'alerts' || page === 'centinel') {
     return hasModuleAccess(profile, 'modulo_alertas_comerciales') || hasModuleAccess(profile, 'modulo_vig_ia');
   }

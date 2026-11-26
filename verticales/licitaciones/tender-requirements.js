@@ -46,7 +46,7 @@ export function closingDay(deadlineAt) {
   const utc = time.toISOString();
   return utc.slice(11, 19) === '00:00:00' ? utc.slice(0, 10) : new Date(time.getTime() - 5 * 3600e3).toISOString().slice(0, 10);
 }
-const TERMINAL_OFFER = new Set(['cerrada_no_go', 'adjudicada', 'no_adjudicada', 'presentada']);
+const TERMINAL_OFFER = new Set(['cerrada_no_go', 'no_presentada', 'adjudicada', 'no_adjudicada', 'presentada']);
 
 /**
  * Por oportunidad: si sigue abierta (no archivada ni descartada, sin NO GO, sin oferta presentada ni resultado, y con cierre de hoy en

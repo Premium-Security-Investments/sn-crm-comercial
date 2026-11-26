@@ -103,7 +103,7 @@ export type TenderCompanyProfile = { legal_name?: string | null; nit?: string | 
 export type TenderCompanyDocument = { id: string; document_type: string; display_name: string; issued_at?: string | null; expires_at?: string | null; version: number; current: boolean; state: 'vigente' | 'vence_pronto' | 'vencido' | 'sin_vencimiento'; mime_type?: string | null; size_bytes: number; created_at: string; uploaded_by_name?: string | null; url?: string | null };
 export type TenderDossier = { tender_id?: string; opportunity_id: string; entity?: string; title?: string; source?: string; url?: string | null; document_count: number; missing_document_count: number; document_import_status: string; document_import_error?: string | null; go_no_go?: string | null; risk?: string | null; checklist_progress?: { total?: number; auto_generated?: number; human_required?: number } | null; preparation_status?: string | null; human_pending_count?: number; sharepoint_status?: string | null; sharepoint_url?: string | null; dossier_error?: string | null; documents_pending_source?: { reason_code: string; reason?: string | null; next_check_at?: string | null; attempt?: number; parked?: boolean } | null };
 export type TenderOpportunityFilter = 'all' | 'por_decidir' | 'en_curso' | 'cerradas' | 'archivadas' | 'pending_decision' | 'go_authorized' | 'in_preparation' | 'submitted' | 'closed';
-export type TenderOfferStatus = 'pendiente_decision' | 'en_preparacion' | 'lista_para_presentar' | 'presentada' | 'adjudicada' | 'no_adjudicada' | 'cerrada_no_go';
+export type TenderOfferStatus = 'pendiente_decision' | 'en_preparacion' | 'lista_para_presentar' | 'presentada' | 'adjudicada' | 'no_adjudicada' | 'cerrada_no_go' | 'no_presentada';
 export type TenderOpportunitySummary = TenderDossier & {
   recommendation: string;
   decision: 'go' | 'no_go' | null;
@@ -854,7 +854,7 @@ export type TenderOfferStatusTransition = {
   opportunity_id: string;
   tender_id: string;
   actor_id: string;
-  from_status: Exclude<TenderOfferStatus, 'pendiente_decision' | 'cerrada_no_go' | 'adjudicada' | 'no_adjudicada'>;
+  from_status: Exclude<TenderOfferStatus, 'pendiente_decision' | 'cerrada_no_go' | 'adjudicada' | 'no_adjudicada' | 'no_presentada'>;
   to_status: Exclude<TenderOfferStatus, 'pendiente_decision' | 'cerrada_no_go' | 'en_preparacion'>;
   note: string | null;
   changed_at: string;
@@ -880,7 +880,7 @@ export type TendersModuleProps = { view: TenderModuleView; data: TenderModuleDat
 /** Acta de cierre: arranca de la nota que escribió la persona al cerrar y Vig-IA la profundiza. */
 export type TenderClosureActaEntry = { titulo?: string | null; detalle?: string | null; fuente?: string | null };
 export type TenderClosureActaStatus = 'borrador' | 'confirmada';
-export type TenderClosureKind = 'adjudicada' | 'no_adjudicada' | 'cerrada_no_go' | 'archivada';
+export type TenderClosureKind = 'adjudicada' | 'no_adjudicada' | 'cerrada_no_go' | 'no_presentada' | 'archivada';
 export type TenderClosureNoteSource = 'archive_note' | 'status_transition' | 'no_go_justification' | 'manual';
 export type TenderClosureActa = {
   acta: {
@@ -1125,23 +1125,29 @@ export type TenderMiDiaActividad = 'observar' | 'presentar' | 'tramitar' | 'unir
 export type TenderMiDiaAccion = {
   key: string; opportunity_id: string; proceso: string; ref: string | null; actividad: TenderMiDiaActividad; texto: string;
   value: string; day: string; tiene_hora: boolean; dias: number; responsable: string | null; hecho: { at: string | null; por: string | null } | null;
+  /** Sólo en el cierre: cuántas cosas críticas del expediente siguen abiertas (el detalle está en el proceso). */
+  criticos?: number; criticos_titulos?: string[];
+  /** Cierre cuya fecha contradice otra fuente: sale en Presentar «por confirmar en SECOP», nunca en el día. */
+  por_confirmar?: boolean;
+  /** Las fuentes de la entidad no coinciden en la hora: `value` trae la más temprana (Medellín, 26-nov). */
+  hora_por_confirmar?: boolean;
 };
 export type TenderMiDiaPendiente = {
   opportunity_id: string | null; proceso: string | null; ref: string | null; actividad: TenderMiDiaActividad; texto: string;
   responsable: string | null; vencido_hace: number | null; destino: 'proceso' | 'requisitos';
 };
-export type TenderMiDiaEntidad = { key: string; opportunity_id: string; proceso: string; ref: string | null; texto: string; value: string; day: string; tiene_hora: boolean };
+export type TenderMiDiaEntidad = { key: string; opportunity_id: string; proceso: string; ref: string | null; texto: string; value: string; day: string; tiene_hora: boolean; hora_por_confirmar?: boolean };
 export type TenderMiDiaTramite = { key: string; titulo: string; estado: string; sin_dato: boolean; procesos: number; primer_cierre: string | null };
 export type TenderMiDiaUnirnos = { opportunity_id: string; proceso: string; ref: string | null; cierre: string | null; motivo: string };
 export type TenderMiDia = {
   today: string; hasta: string; procesos: number; without_access: number; hechos_disponible: boolean;
   frase: {
     observaciones: number; cierres: number; manifestaciones: { proceso: string; opportunity_id: string }[];
-    primero: { proceso: string; texto: string; value: string; day: string; tiene_hora: boolean; opportunity_id: string } | null;
+    primero: { proceso: string; texto: string; value: string; day: string; tiene_hora: boolean; opportunity_id: string; hora_por_confirmar?: boolean } | null;
   };
   actividades: {
     observar: { esta_semana: number; proxima: number; items: TenderMiDiaAccion[]; proximo: TenderMiDiaAccion | null };
-    presentar: { cierres: number; items: TenderMiDiaAccion[]; critico: TenderMiDiaAccion | TenderMiDiaPendiente | null };
+    presentar: { cierres: number; items: TenderMiDiaAccion[] };
     tramitar: { por_tramitar: number; sin_dato: number; total: number; items: TenderMiDiaTramite[] };
     unirnos: { total: number; items: TenderMiDiaUnirnos[] };
   };

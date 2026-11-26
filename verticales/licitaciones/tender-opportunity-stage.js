@@ -2,11 +2,11 @@
 // (src/tenders/opportunityStage.ts, TypeScript del frontend) y del CASE de la migración 088. Una prueba de paridad
 // (tests/tender-opportunity-stage-parity.test.mjs) las mantiene iguales.
 //
-//   1. 'cerradas': NO GO humano vigente, o estado de oferta terminal (cerrada_no_go, adjudicada, no_adjudicada).
+//   1. 'cerradas': NO GO humano vigente, o estado de oferta terminal (cerrada_no_go, no_presentada, adjudicada, no_adjudicada).
 //   2. 'por_decidir': sin decisión humana GO/NO GO (la recomendación del sistema nunca la sustituye).
 //   3. 'en_curso': GO humano y no terminal.
 
-export const TENDER_OPPORTUNITY_TERMINAL_OFFER_STATUSES = Object.freeze(['cerrada_no_go', 'adjudicada', 'no_adjudicada']);
+export const TENDER_OPPORTUNITY_TERMINAL_OFFER_STATUSES = Object.freeze(['cerrada_no_go', 'adjudicada', 'no_adjudicada', 'no_presentada']);
 
 export function classifyTenderOpportunityStage(row) {
   const status = String(row?.tender_offer_status || 'pendiente_decision');

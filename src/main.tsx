@@ -11,6 +11,7 @@ import { isModulePermissionEligible } from '../module-access.js';
 import { agt002UnavailableMessage } from '../verticales/licitaciones/agt002-reanalysis-error-message.js';
 import { REGIONAL_OPTIONS, isValidRegionalOption } from './regional-options.js';
 import { SiioDashboard } from './siio/SiioDashboard';
+import { CotizadorModelos } from './siio/CotizadorModelos';
 import { AvisoIngreso, IngresoMarca } from './shell/IngresoMarca';
 import { CabeceraMarca, LogoCincuentaAnos } from './shell/MarcoMarca';
 import { ChevronRight, Lock, Mail, Menu as MenuIcon } from 'lucide-react';
@@ -26,7 +27,9 @@ import { TenderDecisionExperience } from './tenders/components/TenderDecisionExp
 import { TenderManualReanalysis } from './tenders/workspace/TenderManualReanalysis';
 import { TenderVigiaChannel } from './tenders/workspace/TenderVigiaChannel';
 import { TenderOwnDocuments } from './tenders/workspace/TenderOwnDocuments';
-import { TenderMiDia } from './tenders/components/TenderMiDia';
+import { TenderMiDia, type TenderMiDiaResumen } from './tenders/components/TenderMiDia';
+import { classifyOpportunityStage } from './tenders/opportunityStage';
+import { VigiaDock } from './vigia/VigiaDock';
 import { TenderMyDayOfferReminder } from './tenders/components/TenderMyDayOfferReminder';
 import { TenderCompanyDocumentBridgePanel } from './tenders/components/TenderCompanyDocumentBridgePanel';
 import { TenderComplianceMatrixPanel } from './tenders/components/TenderComplianceMatrixPanel';
@@ -79,6 +82,8 @@ import { CLOSURE_FORM_REQUIRED_TO_WIN } from './vigia/closure-form.js';
 import { competitorContractsDue, renewalsDue } from './vigia/renewal-alerts.js';
 import { dealMix } from './vigia/deal-mix.js';
 import { AvancysCollectionPanel } from './vigia/AvancysCollectionPanel';
+import { AvancysCommissionsPanel } from './vigia/AvancysCommissionsPanel';
+import { ContratosClientesPanel } from './vigia/ContratosClientesPanel';
 import { OpportunityQuotes, QuotesSection } from './vigia/QuotesSection';
 import { bogotaDay, decisionQuota, type DecisionQuota, DELETE_PERMISSION, isDeleteRequested, isFrozen, isOutOfActivePipeline, isPendingDecision, pendingDecisions } from './vigia/opportunity-decision-rules.js';
 import { bogotaMonth, monthlyGoalCompliance, type BehaviorReport, type BehaviorStatus } from './vigia/commercial-behavior.js';
@@ -139,7 +144,7 @@ type TenderSourceDiagnostic = { source: string; status: 'ok' | 'error' | string;
 type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; prioridadBaja: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
 type TenderSearchProfile = { id: string; name: string; description?: string | null; region_key: TenderRegionKey; source_filter: string; section_filter: TenderSection | 'todas'; internal_status_filter: TenderInternalStatus | 'todas'; deadline_filter: TenderDeadlineFilter; value_filter: TenderValueFilter; score_filter: TenderScoreFilter; query_text?: string | null; is_default?: boolean; created_at?: string; updated_at?: string };
 type TenderCompanyProfile = { legal_name?: string | null; nit?: string | null; rup_status?: string | null; rup_updated_at?: string | null; rup_unspsc_codes?: string | null; authorized_services?: string | null; supervigilancia_license?: string | null; financial_capacity?: string | null; organizational_capacity?: string | null; experience_summary?: string | null; certifications?: string | null; recurring_documents?: string | null; disqualifications_notes?: string | null; useful_company_info?: string | null; source_document_name?: string | null; rup_import_notes?: string | null; updated_at?: string | null; updated_by_name?: string | null };
-type Route = { page: 'home' | 'clients' | 'opportunities' | 'quotes' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'dashboard2' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users' | 'siio' | 'agents' | 'estudios' | 'programacion' | 'invalid'; id?: string };
+type Route = { page: 'home' | 'clients' | 'opportunities' | 'quotes' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'dashboard2' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users' | 'siio' | 'modelos' | 'agents' | 'estudios' | 'programacion' | 'invalid'; id?: string };
 type DashboardPeriodFilter = '' | 'todos' | 'mes_actual' | 'proximos_30' | 'trimestre_actual' | 'anio_actual';
 
 type OpportunityPayload = Partial<Omit<Opportunity, 'customer_segment' | 'client_deal_type'>> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; external_source?: string; customer_segment?: CustomerSegment | ''; client_deal_type?: ClientDealType | ''; avancys_nit?: string; };
@@ -324,6 +329,7 @@ function parseRoute(): Route {
   if (page === 'home') return { page: 'home' };
   if (page === 'clients') return { page: 'clients' };
   if (page === 'opportunities') return { page: 'opportunities' };
+  if (page === 'modelos') return { page: 'modelos' };
   if (page === 'cotizar') return id ? { page: 'quotes', id: decodeURIComponent(id) } : { page: 'quotes' };
   if (page === 'tenders') return { page: 'tenders' };
   if (page === 'detail') return id ? { page: 'detail', id: decodeURIComponent(id) } : { page: 'invalid' };
@@ -511,6 +517,8 @@ function App() {
     <CabeceraMarca area={areaFor(route)} menu={<button type="button" className="topbar-menu-toggle" aria-label="Abrir menú de navegación" aria-expanded={sidebarOpen} aria-controls="app-sidebar" onClick={() => setSidebarOpen(open => !open)}><MenuIcon aria-hidden="true" /></button>}>
       <UserMenu name={realProfile?.full_name || ''} email={session.user.email || ''} role={realProfile ? roleLabel(realProfile.role) : 'perfil'}
         viewMode={realProfile && canUseCommercialView(realProfile) ? viewMode : undefined} onChangeViewMode={changeViewMode}
+        whatsapp={realProfile?.whatsapp_phone || null}
+        onSaveWhatsapp={realProfile && realProfile.identity_type !== 'agent' ? async value => { await api('/api/me/whatsapp', { method: 'PUT', body: JSON.stringify({ whatsapp_phone: value }) }); await refresh(); } : undefined}
         onRefresh={() => void refresh()} onSignOut={() => void supabaseBrowser.auth.signOut()} />
     </CabeceraMarca>
     {sidebarOpen && <div className="sidebar-backdrop" onClick={closeSidebar} aria-hidden="true" />}
@@ -597,7 +605,7 @@ function fechaDeHoyBogota() {
 }
 // El área del menú a la que pertenece cada pantalla (decisión de Juan, 2026-10-09); va en la cabecera azul.
 function areaFor(route: Route) {
-  if (route.page === 'siio') return 'Gerencia';
+  if (route.page === 'siio' || route.page === 'modelos') return 'Gerencia';
   if (route.page === 'tenders') return 'Licitaciones';
   if (route.page === 'users') return 'Administración';
   if (route.page === 'agents') return 'IT';
@@ -616,6 +624,7 @@ function titleFor(route: Route, profile?: Profile | null) {
   if (route.page === 'dashboard') return 'Dashboard';
   if (route.page === 'dashboard2') return 'Dashboard';
   if (route.page === 'siio') return 'Torre de Control';
+  if (route.page === 'modelos') return 'Cotizador de modelos';
   if (route.page === 'consultant') return 'Detalle de consultor';
   if (route.page === 'goals') return canWriteGoals(profile) ? 'Cargar metas' : 'Mis metas';
   if (route.page === 'alerts') return 'Prioridades Comerciales';
@@ -652,6 +661,7 @@ function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; r
   if (route.page === 'edit' && route.id) return <OpportunityForm data={data} id={route.id} refresh={refresh} />;
   if (route.page === 'dashboard' || route.page === 'dashboard2') return <ManagerDashboardV2 data={data} refresh={refresh} />;
   if (route.page === 'siio') return <SiioDashboard currentProfile={data.currentProfile} />;
+  if (route.page === 'modelos') return <CotizadorModelos />;
   if (route.page === 'consultant' && route.id) return <ConsultantDetail data={data} ownerId={route.id} />;
   if (route.page === 'goals') return <GoalsCompliance data={data} refresh={refresh} />;
   if (route.page === 'alerts') return <VigiaCommercial
@@ -2136,7 +2146,7 @@ const businessEventLabels: Record<string, string> = {
   offer_preparation_started: 'Preparación de oferta iniciada', offer_submitted: 'Oferta presentada', awarded: 'Oferta adjudicada',
   not_awarded: 'Oferta no adjudicada', cancelled: 'Proceso cancelado', deserted: 'Proceso desierto',
 };
-const offerStatusLabels: Record<string, string> = { en_preparacion: 'En preparación', lista_para_presentar: 'Lista para presentar', presentada: 'Presentada', adjudicada: 'Adjudicada', no_adjudicada: 'No adjudicada', cerrada_no_go: 'Cerrada NO GO' };
+const offerStatusLabels: Record<string, string> = { en_preparacion: 'En preparación', lista_para_presentar: 'Lista para presentar', presentada: 'Presentada', adjudicada: 'Adjudicada', no_adjudicada: 'No adjudicada', cerrada_no_go: 'Cerrada NO GO', no_presentada: 'No se presentó' };
 function publicActuationLabel(value: string) { return businessEventLabels[value] || 'Hito del proceso'; }
 type TenderProcessHistoryItem = { id: string; title: string; createdAt: string; actor: string; note?: string | null; sourceUrl?: string | null };
 function PublicTenderFollowUp({ opportunity, profiles, currentProfile }: { opportunity: Opportunity; profiles: Profile[]; currentProfile: Profile }) {
@@ -2851,19 +2861,20 @@ function CommercialBehaviorTable() {
   if (!report) return <div className="notice">Cargando comportamiento del equipo…</div>;
   const rules = report.rules;
   return <>
-    <div className="tablewrap crm-readable-table behavior-table"><table><thead><tr><th>Comercial</th><th>Último seguimiento</th><th>Seguimientos semana / 30 d</th><th>Decisiones semana</th><th>Pendientes de decidir</th><th>% agenda al día</th><th>Último ingreso al CRM</th><th>Meta %</th><th>Estado</th></tr></thead><tbody>{report.rows.map(row => <tr key={row.profileId}>
-      <td><a href={ownerRoute(row.profileId)}><strong>{formatDisplayName(row.name)}</strong></a></td>
-      <td>{row.lastFollowUpAt ? fmtDate(row.lastFollowUpAt) : '—'}<br/><small>{sinceLabel(row.daysSinceFollowUp)}</small></td>
-      <td className="numeric-value">{row.followUpsWeek} / {row.followUps30d}</td>
-      <td className="numeric-value">{row.decisionsWeek}</td>
+    {/* Cinco columnas que se leen completas (Juan, 2026-11-25): los conteos de la semana y el último ingreso pasan a la
+        celda del nombre y al motivo del estado. */}
+    <div className="tablewrap crm-readable-table behavior-table"><table><thead><tr><th>Comercial</th><th>Último seguimiento</th><th>Pendientes de decidir</th><th>Agenda al día</th><th>Meta del mes</th><th>Estado</th></tr></thead><tbody>{report.rows.map(row => <tr key={row.profileId}>
+      <td><a href={ownerRoute(row.profileId)}><strong>{formatDisplayName(row.name)}</strong></a>
+        <small>{row.activeOpportunities} activas · {row.followUpsWeek} seguimientos esta semana</small>
+        <small>{row.lastSeenAt ? `Entró al CRM ${sinceLabel(row.daysSinceSeen)}` : 'Sin registro de ingreso al CRM'}{row.activitySince ? ` · cuenta desde el ${fmtDateOnly(row.activitySince)}` : ''}</small></td>
+      <td>{row.lastFollowUpAt ? fmtDate(row.lastFollowUpAt) : '—'}<small>{row.lastFollowUpAt ? sinceLabel(row.daysSinceFollowUp) : row.activitySince ? 'ninguno desde que entró' : 'sin registro'}</small></td>
       <td className="numeric-value"><strong>{row.pendingDecisions}</strong></td>
       <td className="numeric-value">{row.agendaPct === null ? '—' : `${row.agendaPct}%`}</td>
-      <td>{row.lastSeenAt ? fmtDate(row.lastSeenAt) : '—'}<br/><small>{row.lastSeenAt ? sinceLabel(row.daysSinceSeen) : 'sin registro'}</small></td>
       <td className="numeric-value">{row.goalPct === null ? 'Sin meta' : `${row.goalPct}%`}</td>
       <td><span title={row.reason}><Badge tone={BEHAVIOR_STATUS_TONES[row.status]}>{BEHAVIOR_STATUS_LABELS[row.status]}</Badge></span></td>
     </tr>)}</tbody></table></div>
-    {!report.rows.length && <EmptyState title="Sin comerciales en su alcance" text="Cuando haya comerciales con oportunidades aparecerá su comportamiento." />}
-    <p className="muted behavior-explanation">Inactivo: sin seguimientos ni ingresos al CRM en {rules.inactiveDays} días o más (si aún no hay registro de ingreso, no se marca inactivo). Atrasado: tiene oportunidades pendientes de decidir o menos del {rules.agendaOkPct}% de su agenda al día. Seguimientos = llamadas, correos, reuniones, WhatsApp y notas que el comercial registró en oportunidades comerciales (sin licitaciones); la semana empieza el lunes. Meta % = ventas aprobadas del mes contra su meta del mes.{report.lastSeenAvailable === false ? ' El registro de ingresos al CRM todavía no está activo.' : ''} Pase el cursor sobre el estado para ver el motivo. Regla {rules.version}.</p>
+    {!report.rows.length && <EmptyState title="Sin comerciales con cartera privada" text="Cuando un comercial tenga oportunidades privadas abiertas aparecerá aquí." />}
+    <p className="muted behavior-explanation">Sólo aparecen quienes tienen cartera privada abierta (las licitaciones se miden en su módulo). Inactivo: sin seguimientos ni ingresos al CRM en {rules.inactiveDays} días o más (si aún no hay registro de ingreso, no se marca inactivo). Atrasado: tiene oportunidades pendientes de decidir o menos del {rules.agendaOkPct}% de su agenda al día. Seguimientos = llamadas, correos, reuniones, WhatsApp y notas en oportunidades comerciales; la semana empieza el lunes. En un perfil que pasó a otra persona, la actividad cuenta desde su fecha de inicio.{report.lastSeenAvailable === false ? ' El registro de ingresos al CRM todavía no está activo.' : ''} Pase el cursor sobre el estado para ver el motivo. Regla {rules.version}.</p>
   </>;
 }
 
@@ -2875,7 +2886,10 @@ function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () =>
   const commercialOpportunities = useMemo(() => allCommercialOpportunities.filter(o => !isOutOfActivePipeline(o, now)), [allCommercialOpportunities, now]);
   const deleteRequestRows = allCommercialOpportunities.filter(o => isDeleteRequested(o));
   const canResolveDelete = Boolean(data.currentProfile.permissions?.includes(DELETE_PERMISSION));
-  const activeTenderRows = tenderOpportunities.filter(o => !isTerminalStage(o.stage_code));
+  // Activas = por decidir o en curso, la misma regla del módulo de Licitaciones (Juan, 2026-11-25: «habla de 28 y
+  // activas tenemos como 14»): las cerradas con NO-GO, no presentadas, no adjudicadas y archivadas no cuentan.
+  const activeTenderRows = tenderOpportunities.filter(o => !isTerminalStage(o.stage_code)
+    && ['por_decidir', 'en_curso'].includes(classifyOpportunityStage({ tender_offer_status: o.tender_offer_status || undefined, archived_at: (o as { archived_at?: string | null }).archived_at || undefined })));
   const activeTenderValue = activeTenderRows.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
   const priorities = usePrioritiesById(true);
 
@@ -2893,7 +2907,8 @@ function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () =>
   const activeRows = commercialOpportunities.filter(o => !isTerminalStage(o.stage_code));
   const totalPipeline = activeRows.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
   const weightedPipeline = activeRows.reduce((sum, o) => sum + Number(o.weighted_pipeline_value || 0), 0);
-  const negotiationRows = activeRows.map(o => {
+  // Sólo lo que puede cerrar pronto: Sustentación y Negociación (Juan, 2026-11-25: salían prospectos al 10 %).
+  const negotiationRows = activeRows.filter(o => o.stage_code === 'negociacion' || o.stage_code === 'sustentacion').map(o => {
     const probability = stageProbability.get(o.stage_code) || 0;
     return { ...o, probability, expected: Number(o.weighted_pipeline_value || 0) || Number(o.offer_value || 0) * probability };
   }).sort((a, b) => b.expected - a.expected || Number(b.offer_value || 0) - Number(a.offer_value || 0)).slice(0, 5);
@@ -2915,19 +2930,40 @@ function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () =>
   const complianceTone = (pct: number | null) => pct === null ? 'amber' : pct >= 80 ? 'green' : pct >= 40 ? 'amber' : 'red';
 
   // 3. ¿Qué negocios empujar esta semana?
-  const stalledLargeRows = activeRows
-    .map(o => ({ opportunity: o, action: nextActionStatus(o), inactiveDays: daysSince(o.last_interaction_at || o.updated_at || o.created_at) }))
-    .filter(row => ['overdue', 'missing'].includes(row.action.code) || Number(row.inactiveDays || 0) >= 10)
+  // Una sola lista de negocios para mover (Juan, 2026-11-25): antes dos paneles (detenidos y urgentes de Vig-IA Comercial)
+  // repetían los mismos clientes, y también los de la pregunta 1. Entran los detenidos y los que Vig-IA Comercial marca urgentes,
+  // sin los que ya están arriba; de Vig-IA Comercial queda su recomendación sólo cuando es propia de ese negocio (una frase que
+  // se repite en varios no dice nada).
+  const shownAbove = new Set(negotiationRows.map(o => o.id));
+  const recommendationCount = priorities.list.reduce((map, item) => map.set(item.recommendation, (map.get(item.recommendation) || 0) + 1), new Map<string, number>());
+  const urgentIds = new Set(priorities.list.slice(0, 10).map(item => item.id));
+  const pushRows = activeRows
+    .map(o => ({ opportunity: o, action: nextActionStatus(o), inactiveDays: daysSince(o.last_interaction_at || o.updated_at || o.created_at), priority: priorities.byId.get(o.id) || null }))
+    .filter(row => !shownAbove.has(row.opportunity.id) && (['overdue', 'missing'].includes(row.action.code) || Number(row.inactiveDays || 0) >= 10 || urgentIds.has(row.opportunity.id)))
     .sort((a, b) => Number(b.opportunity.offer_value || 0) - Number(a.opportunity.offer_value || 0))
-    .slice(0, 5);
+    .slice(0, 6)
+    .map(row => ({ ...row, vigia: row.priority && (recommendationCount.get(row.priority.recommendation) || 0) === 1 ? row.priority.recommendation : null }));
   const todayDay = bogotaDay(now) || '';
   const inFourteenDays = bogotaDay(new Date(now.getTime() + 14 * 86_400_000)) || '';
   const returningFrozenRows = allCommercialOpportunities
     .filter(o => isFrozen(o, now) && String(o.frozen_until || '').slice(0, 10) <= inFourteenDays)
     .sort((a, b) => String(a.frozen_until).localeCompare(String(b.frozen_until)));
+  // Las congeladas sin valor se resumen en una línea por comercial: diez filas en $0 eran ruido.
+  const returningValued = returningFrozenRows.filter(o => Number(o.offer_value || 0) > 0);
+  const returningZero = Array.from(returningFrozenRows.filter(o => !(Number(o.offer_value || 0) > 0)).reduce((map, o) => {
+    const key = formatDisplayName(o.owner_name || 'Sin comercial');
+    const day = String(o.frozen_until).slice(0, 10);
+    const row = map.get(key) || { owner: key, count: 0, first: day, last: day };
+    row.count++; if (day > row.last) row.last = day;
+    return map.set(key, row);
+  }, new Map<string, { owner: string; count: number; first: string; last: string }>()).values());
   const lossSince = bogotaDay(new Date(now.getTime() - 90 * 86_400_000)) || '';
+  // Sólo las perdidas (Juan, 2026-11-25): las descartadas son limpieza de cartera, no negocios perdidos, y salían como
+  // «Sin motivo registrado» encima de todo. Van aparte, en una línea.
+  const discardedRows = allCommercialOpportunities.filter(o => o.stage_code === 'descartado' && String(bogotaDay(o.discarded_at || o.updated_at) || '') >= lossSince);
+  const discardedValue = discardedRows.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
   const lossReasonRows = Array.from(allCommercialOpportunities
-    .filter(o => (o.stage_code === 'perdido' || o.stage_code === 'descartado') && String(bogotaDay(o.lost_at || o.discarded_at || o.updated_at) || '') >= lossSince)
+    .filter(o => o.stage_code === 'perdido' && String(bogotaDay(o.lost_at || o.updated_at) || '') >= lossSince)
     .reduce((map, o) => {
       const key = o.loss_reason_code || 'sin_motivo';
       const row = map.get(key) || { key, label: o.loss_reason_name || data.lossReasons.find(reason => reason.code === o.loss_reason_code)?.name || 'Sin motivo registrado', count: 0, value: 0 };
@@ -2936,7 +2972,6 @@ function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () =>
       map.set(key, row);
       return map;
     }, new Map<string, { key: string; label: string; count: number; value: number }>()).values()).sort((a, b) => b.count - a.count || b.value - a.value);
-  const urgentRows = priorities.list.slice(0, 5);
   // Renovaciones de todo el equipo cuyo contrato vence en 90 días o ya venció: la misma regla de Mi día.
   const teamRenewals = renewalsDue(allCommercialOpportunities, now);
 
@@ -2951,14 +2986,16 @@ function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () =>
         <div className="v2-kpi-card blue"><small>Pipeline activo</small><strong className="numeric-value">{fmtMoneyCompact(totalPipeline)}</strong><span>{activeRows.length} oportunidades activas</span></div>
         <div className="v2-kpi-card purple"><small>Valor esperado</small><strong className="numeric-value">{fmtMoneyCompact(weightedPipeline)}</strong><span>Valor × probabilidad de la etapa</span></div>
       </div>
+      {/* La calidad de los datos cambia cómo se leen las cifras: va al lado de ellas, no al final (Juan, 2026-11-25). */}
+      <p className={`dashboard-quality-line${dataQuality.complete ? '' : ' is-warning'}`}>{dataQuality.complete ? 'Las oportunidades activas tienen valor, tipo de cliente y regional.' : <><strong>Ojo con las cifras:</strong> {dataQuality.summary}. El pipeline y el valor esperado no incluyen lo que no tiene valor.</>} El total del equipo sólo cuenta a quien tiene meta cargada.</p>
       <Panel title="Lo que está en negociación">
-        <p className="v2-panel-note">Las 5 oportunidades con mayor valor esperado (valor × probabilidad de la etapa).</p>
+        <p className="v2-panel-note">Las 5 en Sustentación o Negociación con mayor valor esperado (valor × probabilidad de la etapa): lo que puede cerrar pronto.</p>
         <div className="v2-deal-list">{negotiationRows.map(o => <a className="v2-deal-row" key={o.id} href={`#/detail/${o.id}`}>
           <div><strong>{formatDisplayName(o.company_name)}</strong><small>{formatDisplayName(o.owner_name || 'Sin comercial')} · {o.stage_name}</small></div>
           <div className="v2-deal-value"><strong>{fmtMoneyCompact(o.offer_value)}</strong><small>Valor esperado {fmtMoneyCompact(o.expected)}</small></div>
           <Badge tone={stageTone(o.stage_code)}>{Math.round(o.probability * 100)}%</Badge>
         </a>)}</div>
-        {!negotiationRows.length && <EmptyState title="Sin oportunidades activas" text="No hay oportunidades comerciales activas para cerrar la brecha." />}
+        {!negotiationRows.length && <EmptyState title="Nada en Sustentación ni Negociación" text="No hay oportunidades comerciales en las etapas que cierran pronto." />}
       </Panel>
       <details className="panel dashboard-details">
         <summary>Ventas por comercial y trimestre {year}</summary>
@@ -2977,7 +3014,7 @@ function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () =>
         {!dealMixRows.length && <p className="muted">Sin ventas este año ni oportunidades activas.</p>}
       </details>
       <AvancysCollectionPanel />
-      <p className="muted dashboard-footnote">Calidad de datos: {dataQuality.complete ? 'las oportunidades activas tienen valor, tipo de cliente y regional.' : `${dataQuality.summary}. El pipeline y el valor esperado no incluyen lo que no tiene valor.`} El total del equipo sólo cuenta a quien tiene meta cargada.</p>
+      <AvancysCommissionsPanel />
     </section>
 
     <section id="dashboard-q2" className="v2-component-block dashboard-question" aria-label="¿Quién necesita ayuda?">
@@ -2986,32 +3023,30 @@ function ManagerDashboardV2({ data, refresh }: { data: Bootstrap; refresh: () =>
     </section>
 
     <section id="dashboard-q3" className="v2-component-block dashboard-question" aria-label="¿Qué negocios empujar esta semana?">
-      <div className="v2-section-heading"><span>Pregunta 3</span><h2>¿Qué negocios empujar esta semana?</h2><p>Negocios grandes detenidos, congeladas que vuelven pronto, por qué perdemos y lo más urgente según Vig-IA Comercial.</p></div>
+      <div className="v2-section-heading"><span>Pregunta 3</span><h2>¿Qué negocios empujar esta semana?</h2><p>Los negocios detenidos o que Vig-IA Comercial marca urgentes, sin repetir los de arriba; lo que vuelve pronto y por qué perdemos.</p></div>
       <div className="grid two dashboard-panels">
-        <Panel title="Grandes y detenidos">
-          <div className="v2-deal-list">{stalledLargeRows.map(row => <a className="v2-deal-row" key={row.opportunity.id} href={`#/detail/${row.opportunity.id}`}>
-            <div><strong>{formatDisplayName(row.opportunity.company_name)}</strong><small>{formatDisplayName(row.opportunity.owner_name || 'Sin comercial')} · {row.opportunity.stage_name}</small></div>
-            <div className="v2-deal-value"><strong>{fmtMoneyCompact(row.opportunity.offer_value)}</strong><small>{row.action.code === 'overdue' ? 'Gestión vencida' : row.action.code === 'missing' ? 'Sin próxima gestión' : `${row.inactiveDays} días sin seguimiento`}</small></div>
+        <Panel title="Negocios para mover">
+          <div className="v2-deal-list">{pushRows.map(row => <a className="v2-deal-row" key={row.opportunity.id} href={`#/detail/${row.opportunity.id}`}>
+            <div><strong>{formatDisplayName(row.opportunity.company_name)}</strong><small>{formatDisplayName(row.opportunity.owner_name || 'Sin comercial')} · {row.opportunity.stage_name}</small>{row.vigia && <small className="v2-deal-vigia">Vig-IA Comercial: {row.vigia}</small>}</div>
+            <div className="v2-deal-value"><strong>{fmtMoneyCompact(row.opportunity.offer_value)}</strong><small>{row.action.code === 'overdue' ? 'Gestión vencida' : row.action.code === 'missing' ? 'Sin próxima gestión' : Number(row.inactiveDays || 0) >= 10 ? `${row.inactiveDays} días sin seguimiento` : 'Urgente según Vig-IA Comercial'}</small></div>
           </a>)}</div>
-          {!stalledLargeRows.length && <EmptyState title="Nada detenido" text="No hay oportunidades vencidas, sin agenda o con 10+ días sin seguimiento." />}
+          {!pushRows.length && <EmptyState title="Nada detenido" text="No hay negocios vencidos, sin agenda, con 10+ días sin seguimiento ni urgentes, fuera de los de arriba." />}
         </Panel>
-        <Panel title="Lo más urgente (Vig-IA Comercial)">
-          {priorities.status === 'loading' || priorities.status === 'idle' ? <p className="muted">Cargando prioridades…</p> : priorities.status === 'error' ? <p className="muted">Las prioridades no están disponibles en este momento.</p> : <div className="v2-deal-list">{urgentRows.map(item => <a className="v2-deal-row" key={item.id} href={`#/detail/${item.id}`}>
-            <div><strong>{formatDisplayName(item.company_name)}</strong><small>{priorityReason(item)} · {item.recommendation}</small></div>
-            <div className="v2-deal-value"><strong>{fmtMoneyCompact(item.offer_value)}</strong><small>{formatDisplayName(item.owner_name || 'Sin comercial')}</small></div>
-          </a>)}{!urgentRows.length && <EmptyState title="Sin urgencias" text="Vig-IA Comercial no encontró oportunidades urgentes." />}</div>}
-        </Panel>
-        <Panel title="Renovaciones por vencer (90 días)">
-          {teamRenewals.length ? <ul className="dashboard-simple-list">{teamRenewals.map(({ opportunity: o, phrase }) => <li key={o.id}><a href={`#/detail/${o.id}`}><strong>{formatDisplayName(o.company_name)}</strong></a> <span>{phrase} · {formatDisplayName(o.owner_name || 'Sin comercial')}</span></li>)}</ul>
-            : <p className="muted">Ninguna renovación abierta vence en los próximos 90 días.</p>}
-        </Panel>
-        <Panel title="Congeladas que vuelven en 14 días">
-          {returningFrozenRows.length ? <ul className="dashboard-simple-list">{returningFrozenRows.map(o => <li key={o.id}><a href={`#/detail/${o.id}`}><strong>{formatDisplayName(o.company_name)}</strong></a> <span>vuelve el {fmtDateOnly(o.frozen_until)} · {formatDisplayName(o.owner_name || 'Sin comercial')} · {fmtMoneyCompact(o.offer_value)}</span></li>)}</ul> : <p className="muted">Ninguna congelada vuelve en los próximos 14 días.</p>}
-          <small className="muted">Hoy es {fmtDateOnly(todayDay)}.</small>
-        </Panel>
-        <Panel title="Por qué perdemos (últimos 90 días)">
-          {lossReasonRows.length ? <ul className="dashboard-simple-list">{lossReasonRows.map(row => <li key={row.key}><strong>{row.label}</strong> <span>{row.count} {row.count === 1 ? 'oportunidad' : 'oportunidades'} · {fmtMoneyCompact(row.value)}</span></li>)}</ul> : <p className="muted">Sin oportunidades perdidas o descartadas en los últimos 90 días.</p>}
-        </Panel>
+        <div className="stack">
+          {/* Contratos de clientes (Juan, 2026-11-26): vencimientos y clientes sin contrato vigente. */}
+          <ContratosClientesPanel modo="equipo" />
+          {teamRenewals.length > 0 && <Panel title="Renovaciones por vencer (90 días)">
+            <ul className="dashboard-simple-list">{teamRenewals.map(({ opportunity: o, phrase }) => <li key={o.id}><a href={`#/detail/${o.id}`}><strong>{formatDisplayName(o.company_name)}</strong></a> <span>{phrase} · {formatDisplayName(o.owner_name || 'Sin comercial')}</span></li>)}</ul>
+          </Panel>}
+          {returningFrozenRows.length > 0 && <Panel title="Congeladas que vuelven en 14 días">
+            {returningValued.length > 0 && <ul className="dashboard-simple-list">{returningValued.map(o => <li key={o.id}><a href={`#/detail/${o.id}`}><strong>{formatDisplayName(o.company_name)}</strong></a> <span>vuelve el {fmtDateOnly(o.frozen_until)} · {formatDisplayName(o.owner_name || 'Sin comercial')} · {fmtMoneyCompact(o.offer_value)}</span></li>)}</ul>}
+            {returningZero.map(row => <p key={row.owner} className="muted">{row.count === 1 ? '1 sin valor' : `${row.count} sin valor`} de {row.owner} {row.first === row.last ? `vuelve el ${fmtDateOnly(row.first)}` : `vuelven entre el ${fmtDateOnly(row.first)} y el ${fmtDateOnly(row.last)}`}.</p>)}
+          </Panel>}
+          <Panel title="Por qué perdemos (últimos 90 días)">
+            {lossReasonRows.length ? <ul className="dashboard-simple-list">{lossReasonRows.map(row => <li key={row.key}><strong>{row.label}</strong> <span>{row.count} {row.count === 1 ? 'oportunidad' : 'oportunidades'} · {fmtMoneyCompact(row.value)}</span></li>)}</ul> : <p className="muted">Ninguna oportunidad perdida en los últimos 90 días.</p>}
+            {discardedRows.length > 0 && <p className="muted">Además, {discardedRows.length === 1 ? '1 descartada' : `${discardedRows.length} descartadas`} ({fmtMoneyCompact(discardedValue)}): limpieza de cartera, no negocios perdidos.</p>}
+          </Panel>
+        </div>
       </div>
     </section>
 
@@ -3064,6 +3099,7 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
   // hay nada y pasa a ser la próxima conversación. La siguiente gestión se busca en toda la cartera, no sólo en
   // los 7 días: el vacío de la semana no debe dejar la pantalla muda.
   const isCalm = !pendingCount && !todayCount;
+  const [tenderResumen, setTenderResumen] = useState<TenderMiDiaResumen | null>(null);
   const nextTalk = useMemo(() => activeRows
     .filter(o => (bogotaDay(o.next_action_at as string) || '') > todayKey)
     .sort((a, b) => String(a.next_action_at).localeCompare(String(b.next_action_at)))[0] || null, [activeRows, todayKey]);
@@ -3104,23 +3140,36 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
   // Quien sólo trabaja licitaciones (hoy, Katherine) no ve la parte comercial: le salía vacía y decía «Hoy está
   // despejado» con la semana llena de plazos (Juan, 2026-11-15).
   const tendersOnly = can(data.currentProfile, ACTIONS.LICITACIONES_VIEW) && !opportunities.some(o => isAgt003CommercialOpportunity(o));
+  const seesTenders = can(data.currentProfile, ACTIONS.LICITACIONES_VIEW);
+  const bothWorlds = seesTenders && !tendersOnly;
+  // Quien trabaja licitaciones y clientes privados ve dos secciones con título propio, y arriba una frase de cada una
+  // (Juan, 2026-11-25: «no se veía bien la separación; si un comercial tiene ambas debe quedar claro»). Va primero la
+  // que tenga algo para hoy; si las dos o ninguna, licitaciones.
+  const clientsToday = pendingCount + todayCount;
+  const clientsFirst = bothWorlds && clientsToday > 0 && !(tenderResumen && tenderResumen.hoy > 0);
+  const tenderLine = !tenderResumen ? 'cargando…'
+    : tenderResumen.hoy && tenderResumen.primero
+      ? `${tenderResumen.hoy === 1 ? '1 plazo hoy' : `${tenderResumen.hoy} plazos hoy`}. Lo primero: ${tenderResumen.primero.texto.toLowerCase()} · ${tenderResumen.primero.proceso}${tenderResumen.primero.hora ? `, ${tenderResumen.primero.hora}` : ''}.`
+      : 'sin plazos hoy.';
 
-  return <section className="stack my-day-home" aria-label="Mi día">
-    <div className="my-day-head">
-      <p className="my-day-dayline">{MY_DAY_DATE.format(now).replace(',', '')}</p>
-      {tendersOnly
-        ? <h2 className="my-day-headline">Mi día · {data.currentProfile.full_name?.split(/\s+/)[0] || 'licitaciones'}</h2>
-        : <><h2 className="my-day-headline">{headline}</h2>
-          {subline && <p className="my-day-subline">{subline}</p>}</>}
-    </div>
+  const tendersSection = seesTenders && <section id="mi-dia-licitaciones" className={`my-day-world is-tenders${bothWorlds ? '' : ' is-alone'}`} aria-label="Licitaciones">
+    {bothWorlds && <h2 className="my-day-world-h">Licitaciones</h2>}
     {/* Mi día de licitaciones (Juan, 2026-11-15, maqueta aprobada): alertas en dos niveles, las cuatro actividades y el
         día a día. Reemplaza la semana mezclada y la tarjeta de vencidos, que ahora van dentro como lo crítico. */}
-    {can(data.currentProfile, ACTIONS.LICITACIONES_VIEW) && <TenderMiDia request={api} onOpen={opportunityId => go(`#/detail/${opportunityId}`)} onGo={go} />}
-    {can(data.currentProfile, ACTIONS.LICITACIONES_VIEW) && <TenderMyDayOfferReminder request={api} onOpen={opportunityId => go(`#/detail/${opportunityId}`)} />}
+    <TenderMiDia request={api} onOpen={opportunityId => go(`#/detail/${opportunityId}`)} onGo={go} onSummary={setTenderResumen} />
+    <TenderMyDayOfferReminder request={api} onOpen={opportunityId => go(`#/detail/${opportunityId}`)} />
+  </section>;
+
+  const clientsSection = tendersOnly ? null : <section id="mi-dia-clientes" className={`my-day-world is-clients${bothWorlds ? '' : ' is-alone'}`} aria-label="Clientes privados">
+    {bothWorlds && <>
+      <h2 className="my-day-world-h">Clientes privados</h2>
+      <p className="my-day-world-lead">{headline}</p>
+      {subline && <p className="my-day-subline">{subline}</p>}
+    </>}
     {(data.leadAnalysesToday || []).length > 0 && <section className="notice my-day-lead-analysis" aria-label="Análisis profundos de hoy">
       {(data.leadAnalysesToday || []).map(opportunityId => { const row = data.opportunities.find(o => o.id === opportunityId); return row ? <p key={opportunityId}><strong>Ganó el análisis profundo de {row.company_name}.</strong> <a href={`#/detail/${opportunityId}`}>Véalo aquí</a></p> : null; })}
     </section>}
-    {tendersOnly ? null : !opportunities.length
+    {!opportunities.length
       ? <section className="panel my-day-first">
         <EmptyState title="Crea tu primera oportunidad" text="Aún no tienes oportunidades a tu nombre. Registra la primera para empezar a trabajar tu día desde aquí." />
         {canCreate && <button type="button" onClick={() => go('#/new')}>Crear oportunidad</button>}
@@ -3132,13 +3181,12 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
             : <NowQueue pending={pendingDecisionRows} today={todayRows} stages={data.stages} lossReasons={data.lossReasons}
               competitors={data.competitors || []} onChanged={refresh} empty={nowEmpty} now={now} />}
           {isCalm && <TodayDone opportunities={opportunities.filter(o => isAgt003CommercialOpportunity(o))} now={now} />}
+          <ContratosClientesPanel modo="propio" />
           <RenewalsDue items={renewals} />
           <RenewalsDue items={competitorContracts} title="Contratos de la competencia por vencer" />
           <WeekList upcoming={weekRows} />
-          {isCalm && canRenderOpportunityCopilot(data.currentProfile, null) && <VigiaChatRegistro onSaved={refresh} />}
         </div>
         <div className="my-day-side">
-          {!isCalm && canRenderOpportunityCopilot(data.currentProfile, null) && <VigiaChatRegistro onSaved={refresh} />}
           <section className="my-day-goal" aria-label="Meta del mes">
             <h3>Meta del mes</h3>
             {goal.budget ? <>
@@ -3166,6 +3214,27 @@ function MyDayHome({ data, refresh }: { data: Bootstrap; refresh: () => Promise<
         </details>}
       </div>}
   </section>;
+
+  // El chat de Vig-IA Comercial va en el panel fijo de la derecha (Juan, 2026-11-25), no al final de la página.
+  const vigiaChat = canRenderOpportunityCopilot(data.currentProfile, null) ? <VigiaChatRegistro onSaved={refresh} /> : null;
+
+  return <VigiaDock dock={vigiaChat} label="Contarle a Vig-IA Comercial">
+  <section className="stack my-day-home" aria-label="Mi día">
+    <div className="my-day-head">
+      <p className="my-day-dayline">{MY_DAY_DATE.format(now).replace(',', '')}</p>
+      {tendersOnly
+        ? <h2 className="my-day-headline">Mi día · {data.currentProfile.full_name?.split(/\s+/)[0] || 'licitaciones'}</h2>
+        : bothWorlds
+          ? <div className="my-day-worlds-lead">
+            <p><a href="#mi-dia-licitaciones" onClick={event => { event.preventDefault(); document.getElementById('mi-dia-licitaciones')?.scrollIntoView({ behavior: 'smooth' }); }}><strong>Licitaciones:</strong></a> {tenderLine}</p>
+            <p><a href="#mi-dia-clientes" onClick={event => { event.preventDefault(); document.getElementById('mi-dia-clientes')?.scrollIntoView({ behavior: 'smooth' }); }}><strong>Clientes privados:</strong></a> {headline}</p>
+          </div>
+          : <><h2 className="my-day-headline">{headline}</h2>
+            {subline && <p className="my-day-subline">{subline}</p>}</>}
+    </div>
+    {clientsFirst ? <>{clientsSection}{tendersSection}</> : <>{tendersSection}{clientsSection}</>}
+  </section>
+  </VigiaDock>;
 }
 
 // Vista del directivo sobre un consultor. El comercial trabaja desde MyDayHome (Mi día), no desde aquí.
@@ -3897,7 +3966,11 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
       <label className="wide">Empezar desde una plantilla<select value="" onChange={e => { applyTemplate(e.target.value); }}><option value="">Elegir plantilla (opcional)…</option>{PROFILE_TEMPLATES.map(template => <option key={template.code} value={template.code}>{template.label}</option>)}</select><small className="muted">La plantilla solo marca casillas; después puede ajustarlas.</small></label>
       {form.legacy_role && <p className="muted wide">Esta persona tiene un perfil antiguo ({LEGACY_ROLE_NOTE[form.legacy_role]}). Al guardar queda exactamente con lo que esté marcado abajo.</p>}
       <fieldset className="access-scope wide"><legend>Pestañas que puede abrir</legend><p>Al marcar una pestaña con opciones, estas aparecen debajo.</p>{catalogStatus === 'loading' && <p className="muted">Cargando catálogo de accesos…</p>}{catalogStatus === 'error' && <p className="error">No fue posible cargar el catálogo de accesos. Actualiza la página antes de guardar.</p>}<div className="access-scope-grid">
-        <fieldset className="access-area-card"><legend>Gerencia</legend>{tabBox('torre', 'Torre de Control')}</fieldset>
+        <fieldset className="access-area-card"><legend>Gerencia</legend>{tabBox('torre', 'Torre de Control')}
+          {has('torre') && !readOnly && <div className="access-subarea">
+            <label className="checkline"><input type="checkbox" checked={access.model_quoter} onChange={e => setAccess({ model_quoter: e.target.checked })}/> Cotizador de modelos de servicio: precios, costos y márgenes de clientes</label>
+          </div>}
+        </fieldset>
         <fieldset className="access-area-card"><legend>Comercial</legend>
           {tabBox('dashboard', 'Dashboard')}
           {tabBox('oportunidades', 'Oportunidades')}
@@ -3944,7 +4017,7 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
         </fieldset>
         <fieldset className="access-area-card"><legend>IT · Administración</legend>{tabBox('usuarios', 'Usuarios y permisos · Agentes', readOnly)}<small className="muted">Administra el SIIO: da accesos a otras personas.</small></fieldset>
       </div></fieldset>
-      <label className="checkline wide"><input type="checkbox" checked={readOnly} onChange={e => setAccess(e.target.checked ? { read_only: true, tabs: access.tabs.filter(tab => tab !== 'metas' && tab !== 'estudios' && tab !== 'usuarios'), copilot: false, edit_segment: false, delete_opportunities: false, tender_custody: false, tender_company: false, tender_lessons: false, study_review: false, study_approve: false, owns_opportunities: false, opportunity_scope: 'todas' } : { read_only: false })}/> Solo consulta: ve, pero no cambia nada</label>
+      <label className="checkline wide"><input type="checkbox" checked={readOnly} onChange={e => setAccess(e.target.checked ? { read_only: true, tabs: access.tabs.filter(tab => tab !== 'metas' && tab !== 'estudios' && tab !== 'usuarios'), copilot: false, edit_segment: false, delete_opportunities: false, tender_custody: false, tender_company: false, tender_lessons: false, study_review: false, study_approve: false, model_quoter: false, owns_opportunities: false, opportunity_scope: 'todas' } : { read_only: false })}/> Solo consulta: ve, pero no cambia nada</label>
       <label>Perfil de uso de IA<select value={form.ai_usage_profile || ''} disabled={aiProfiles.status !== 'ready'} onChange={e=>setForm({...form, ai_usage_profile: e.target.value || null})}><option value="">Sin perfil</option>{form.ai_usage_profile && !aiProfiles.profiles.some(profile => profile.profile_id === form.ai_usage_profile) && <option value={form.ai_usage_profile}>{aiProfiles.status === 'ready' ? `${form.ai_usage_profile} (archivado o inexistente)` : form.ai_usage_profile}</option>}{aiProfiles.profiles.map(profile => <option key={profile.profile_id} value={profile.profile_id}>{profile.display_name}</option>)}</select><small className="muted">{aiProfiles.status === 'error' ? 'La plataforma de agentes no responde: el campo queda deshabilitado y se conserva el perfil guardado.' : aiProfiles.status === 'loading' ? 'Cargando perfiles de uso…' : 'Define el cupo de IA por persona. Los perfiles se crean en IT → Agentes → Perfiles de uso.'}</small></label>
       <label>Estado<Select value={form.active ? 'true' : 'false'} onChange={v=>setForm({...form, active:v==='true'})} options={[['true','Activo'],['false','Inactivo']]} empty="Estado"/></label>
       {!editingUserId && <label>Clave temporal<input type="password" minLength={8} value={form.password} onChange={e=>setForm({...form, password:e.target.value})} placeholder={form.send_invite ? 'Opcional si envías correo' : 'Mínimo 8 caracteres'}/></label>}

@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import { quoteTotals } from '../src/vigia/quote-engine.js';
 import { closureFormMoney } from '../src/vigia/closure-form.js';
-import { closurePostsFromQuote, daysLabel, opportunityValueFromQuote, proposalContent } from '../src/vigia/quote-proposal.js';
+import { closurePostsFromQuote, daysLabel, opportunityValuesFromQuote, proposalContent } from '../src/vigia/quote-proposal.js';
 import { buildProposalPdf } from '../src/vigia/quote-proposal-pdf.ts';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
@@ -22,22 +22,25 @@ const techLines = [
   { description: '', category: 'mano_de_obra', quantity: 1, unitCost: 2400000 },
 ];
 
-test('valor para la oportunidad: vigilancia mensual, tecnología total, mixta con la tecnología en 12 meses (antes de IVA)', () => {
+// Juan, 2026-11-25: la cotización mixta ya no se suma; la vigilancia y la tecnología van a oportunidades distintas.
+test('valores para la oportunidad: vigilancia mensual y tecnología total, antes de IVA; la mixta trae los dos sin sumar', () => {
   const guard = quoteTotals({ guardPosts });
-  assert.deepEqual(opportunityValueFromQuote(guard).value, guard.monthly.subtotal);
-  assert.equal(opportunityValueFromQuote(guard).basis, 'mensual');
+  assert.deepEqual(opportunityValuesFromQuote(guard).guard.value, guard.monthly.subtotal);
+  assert.equal(opportunityValuesFromQuote(guard).tech, null);
+  assert.equal(opportunityValuesFromQuote(guard).mixed, false);
 
   const tech = quoteTotals({ techLines });
-  assert.equal(opportunityValueFromQuote(tech).value, tech.oneTime.subtotal);
-  assert.equal(opportunityValueFromQuote(tech).basis, 'total');
+  assert.equal(opportunityValuesFromQuote(tech).tech.value, tech.oneTime.subtotal);
+  assert.equal(opportunityValuesFromQuote(tech).guard, null);
 
   const mixed = quoteTotals({ guardPosts, techLines });
-  const result = opportunityValueFromQuote(mixed);
-  assert.equal(result.basis, 'mixta');
-  assert.equal(result.value, mixed.monthly.subtotal + Math.round(mixed.oneTime.subtotal / 12));
-  assert.match(result.explanation, /repartida en 12 meses/);
+  const result = opportunityValuesFromQuote(mixed);
+  assert.equal(result.mixed, true);
+  assert.equal(result.guard.value, mixed.monthly.subtotal);
+  assert.equal(result.tech.value, mixed.oneTime.subtotal);
+  assert.match(result.tech.explanation, /en total, antes de IVA/);
 
-  assert.equal(opportunityValueFromQuote(quoteTotals({})), null);
+  assert.equal(opportunityValuesFromQuote(quoteTotals({})), null);
 });
 
 test('los puestos pasan al formulario de cierre con sus horas, días, guardas y valor, y el formulario llega al mismo total', () => {
@@ -64,7 +67,7 @@ test('la propuesta nunca muestra el costo ni el margen, y sus condiciones depend
   const content = proposalContent({ quote: { id: 'abcd1234-ef56-4000-8000-000000000000', client_name: 'Cliente S.A.S.', title: 'Sede norte', guardPosts, techLines, totals }, today: '2026-11-16', seller: { name: 'Comercial Uno', email: 'uno@example.com' } });
   assert.equal(content.number, 'SN-COT-ABCD1234');
   assert.equal(content.date, '16 de noviembre de 2026');
-  assert.equal(content.validUntil, '16 de diciembre de 2026');
+  assert.equal(content.validUntil, '1 de diciembre de 2026', 'la mixta vence con la tecnología (15 días)');
   assert.equal(content.company.tagline, 'Sabemos de seguridad');
   assert.ok(!JSON.stringify(content).includes('3500000'), 'el costo unitario no sale');
   assert.ok(!/margen|costo/i.test(JSON.stringify(content)), 'ni la palabra margen ni costo');
@@ -72,10 +75,19 @@ test('la propuesta nunca muestra el costo ni el margen, y sus condiciones depend
   assert.equal(content.guard.total, totals.monthly.total);
   assert.equal(content.tech.total, totals.oneTime.total);
   const conditions = content.conditions.join('\n');
-  for (const expected of [/válida por 30 días/, /mes vencido/, /a 30 días/, /50 % de anticipo/, /contra entrega e instalación/, /15 días hábiles/, /fabricante, mínimo un año/]) assert.match(conditions, expected);
+  // Juan, 2026-11-25: 30 días vigilancia y 15 tecnología; vigilancia mes anticipado, pago a 30 días; garantía de un año;
+  // instalación según el proyecto.
+  for (const expected of [/Vigilancia: oferta válida por 30 días, hasta el 16 de diciembre de 2026/, /Medios tecnológicos: oferta válida por 15 días, hasta el 1 de diciembre de 2026/, /mensualmente por anticipado y la factura se paga a 30 días/, /50 % de anticipo/, /contra entrega e instalación/, /según el cronograma que se acuerde para el proyecto/, /garantía de los equipos de un año/]) assert.match(conditions, expected);
+  assert.doesNotMatch(conditions, /mes vencido|15 días hábiles|fabricante/);
+  assert.match(content.intro, /sede principal en Pereira y agencias en Bogotá, Medellín, Cali, Manizales y Cartago/);
+  assert.doesNotMatch(content.intro, /Armenia/, 'Armenia no tiene resolución todavía');
+  const withTerms = proposalContent({ quote: { id: 'x', tech_delivery_terms: '20 días hábiles desde la orden de compra.', guardPosts: [], techLines, totals: quoteTotals({ techLines }) }, today: '2026-11-16' });
+  assert.ok(withTerms.conditions.includes('Medios tecnológicos: entrega e instalación: 20 días hábiles desde la orden de compra.'));
+  assert.doesNotMatch(withTerms.conditions.join('\n'), /Vigilancia/);
 
   const guardOnly = proposalContent({ quote: { id: 'x', guardPosts, techLines: [], totals: quoteTotals({ guardPosts }) }, today: '2026-11-16' });
   assert.equal(guardOnly.tech, null);
+  assert.equal(guardOnly.validUntil, '16 de diciembre de 2026', 'sólo vigilancia: 30 días');
   assert.doesNotMatch(guardOnly.conditions.join('\n'), /anticipo|garantía/);
   assert.equal(guardOnly.client, 'Cliente');
   assert.equal(daysLabel(['lunes_a_viernes', 'sabados']), 'Lunes a viernes y sábados');
@@ -102,7 +114,7 @@ test('el PDF sale con el logo, el cliente, los valores y el pie numerado', async
   assert.match(plain.text, /Sabemos de seguridad/);
 });
 
-test('servidor: pasar el valor a la oportunidad, igual en los dos backends, sólo con oportunidad abierta', () => {
+test('servidor: pasar el valor a la oportunidad, igual en los dos backends, sólo con oportunidad abierta; la mixta se divide', () => {
   for (const file of ['../server/index.js', '../api/[...path].js']) {
     const text = read(file);
     assert.match(text, /'POST \/api\/agt003\/quote\/use-in-opportunity': \['opportunities', ACTIONS\.CRM_OPPORTUNITY_EDIT\]/, file);
@@ -110,9 +122,23 @@ test('servidor: pasar el valor a la oportunidad, igual en los dos backends, sól
     assert.match(body, /requireQuoteWriter\(currentProfile\)/, `${file}: solo consulta no cambia valores`);
     assert.match(body, /ensureOpportunityAccess\(database, quote\.opportunity_id, currentProfile, ACTIONS\.CRM_OPPORTUNITY_EDIT\)/, file);
     assert.match(body, /CHAT_CLOSED_STAGES\.has\(opportunity\.stage_code\)/, `${file}: no toca oportunidades cerradas`);
+    assert.match(body, /CHAT_CLOSED_STAGES\.has\(target\.stage_code\)/, `${file}: ni la segunda si está cerrada`);
     assert.match(body, /licitacion_publica/, `${file}: ni licitaciones`);
-    assert.match(body, /opportunityValueFromQuote\(quote\.totals\)/, `${file}: con la cotización guardada`);
+    assert.match(body, /opportunityValuesFromQuote\(quote\.totals\)/, `${file}: con la cotización guardada`);
+    assert.match(body, /const primaryIsTech = opportunity\.service_type_code === TECH_OPPORTUNITY_TYPE;/, `${file}: la primera se queda con lo suyo`);
+    assert.match(body, /findOrCreatePairedOpportunity\(database, currentProfile, quote, opportunity, primaryIsTech \? GUARD_OPPORTUNITY_TYPE : TECH_OPPORTUNITY_TYPE\)/);
+    assert.match(body, /update\(\{ paired_opportunity_id: paired\.opportunity\.id \}\)/, `${file}: la segunda queda guardada en la cotización`);
+    const find = text.slice(text.indexOf('async function findOrCreatePairedOpportunity'), text.indexOf('async function setOpportunityValue'));
+    assert.match(find, /if \(quote\.paired_opportunity_id\)/, 'primero la que ya tiene');
+    assert.match(find, /\.eq\('owner_id', primary\.owner_id\)[\s\S]*?\.eq\('service_type_code', serviceType\)[\s\S]*?\.not\('stage_code', 'in', '\(aprobado,descartado,perdido\)'\)/, 'luego una abierta del mismo comercial y tipo');
+    assert.match(find, /primary\.client_id \? query\.eq\('client_id', primary\.client_id\)/, 'del mismo cliente');
+    assert.match(find, /requireOpportunityAction\(database, profile, primary\.owner_id, ACTIONS\.CRM_OPPORTUNITY_CREATE\)/, 'crear exige el permiso de crear');
+    assert.match(find, /persistSalesOpportunity\(database, \{/, 'se crea por el mismo camino que cualquier oportunidad');
+    assert.match(find, /next_action_at: primary\.next_action_at/, 'nace con la próxima gestión de la primera: no queda sin decisión');
   }
+  const sql = read('../supabase/migrations/236_agt003_cotizacion_mixta_dos_oportunidades.sql');
+  assert.match(sql, /add column if not exists paired_opportunity_id uuid references public\.psi_sales_opportunities\(id\) on delete set null/);
+  assert.match(sql, /add column if not exists tech_delivery_terms text/);
 });
 
 test('pantallas: la cotización descarga la propuesta y pasa el valor; el formulario de cierre trae los puestos', () => {
@@ -120,6 +146,8 @@ test('pantallas: la cotización descarga la propuesta y pasa el valor; el formul
   assert.match(quotes, /await import\('\.\/quote-proposal-pdf'\)/, 'pdf-lib se carga sólo al descargar');
   assert.match(quotes, /Descargar propuesta \(PDF\)/);
   assert.match(quotes, /Pasar este valor a la oportunidad/);
+  assert.match(quotes, /Pasar los valores a las dos oportunidades/);
+  assert.match(quotes, /Entrega e instalación \(opcional\)/);
   assert.match(quotes, /\/api\/agt003\/quote\/use-in-opportunity/);
   const closure = read('../src/vigia/ClosureFormPanel.tsx');
   assert.match(closure, /Traer puestos de la cotización/);

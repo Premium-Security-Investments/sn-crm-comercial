@@ -1,5 +1,5 @@
 // F17 (auditoría del piloto Fiscalía; Juan, 2026-11-09, opción A2): sin fecha de observaciones en el análisis, aviso en
-// Mi día y en la licitación hasta que se suba el cronograma de SECOP y el análisis la encuentre.
+// Mi día («Mis pendientes») y en la licitación hasta que se suba el cronograma de SECOP y el análisis la encuentre.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';

@@ -10,13 +10,14 @@ const read = name => readFileSync(new URL(`../supabase/${name}`, import.meta.url
 const m024 = read('migrations/024_tender_offer_status_transitions.sql');
 const m191 = read('migrations/191_tender_ofertas_presentadas.sql');
 const r191 = read('rollbacks/191_tender_ofertas_presentadas_rollback.sql');
+const m234 = read('migrations/234_oferta_no_presentada_cierra.sql');
 
 const JUAN = '60b26173-1226-476b-a958-cf2917661432';
 const KATHERINE = '8c172493-12aa-4be1-893a-2e5e93f7fba2';
 const O = '6ca7043f-ec54-4938-8674-1696403123bd';
 const T = '33333333-3333-4333-8333-333333333333';
 
-async function db({ go = true, ready = false, con191 = true } = {}) {
+async function db({ go = true, ready = false, con191 = true, con234 = false } = {}) {
   const pg = new PGlite();
   await pg.exec(`
     create role anon; create role authenticated; create role service_role;
@@ -38,6 +39,11 @@ async function db({ go = true, ready = false, con191 = true } = {}) {
   await pg.exec(m024);
   if (go) await pg.exec(`insert into psi_tender_go_no_go_decisions (opportunity_id, tender_id, decision) values ('${O}','${T}','go')`);
   if (con191) await pg.exec(m191);
+  if (con234) {
+    await pg.exec(`alter table public.psi_sales_opportunities add column archived_at timestamptz;
+      create table public.psi_tender_closure_acta (id uuid primary key default gen_random_uuid(), closure_kind text);`);
+    await pg.exec(m234);
+  }
   return pg;
 }
 
@@ -99,6 +105,34 @@ test('«no presentada» pide motivo y no cambia el estado', async () => {
   assert.equal(row.kind, 'no_presentada');
   assert.equal(await status(pg), 'en_preparacion');
   await pg.close();
+});
+
+test('con la 234, «no presentada» cierra el proceso con su constancia en la bitácora (Juan, 2026-11-25)', async () => {
+  const pg = await db({ con234: true });
+  await registerTenderOfferSubmission(client(pg), { opportunityId: O, actorId: KATHERINE, body: { kind: 'no_presentada', reason: 'No llegó la póliza.' } });
+  assert.equal(await status(pg), 'no_presentada');
+  const t = (await pg.query(`select from_status, to_status, note from psi_tender_offer_status_transitions`)).rows;
+  assert.deepEqual(t, [{ from_status: 'en_preparacion', to_status: 'no_presentada', note: 'No se presentó: No llegó la póliza.' }]);
+  const kind = (await pg.query(`select public.psi_tender_closure_kind(o) k from psi_sales_opportunities o`)).rows[0].k;
+  assert.equal(kind, 'no_presentada');
+  await pg.close();
+});
+
+test('la 234 corrige lo ya registrado como «no presentada» (caso SIC) y «presentada» sigue igual', async () => {
+  const pg = await db();
+  await registerTenderOfferSubmission(client(pg), { opportunityId: O, actorId: KATHERINE, body: { kind: 'no_presentada', reason: 'Varios procesos a la vez.' } });
+  assert.equal(await status(pg), 'en_preparacion');
+  await pg.exec(`alter table public.psi_sales_opportunities add column archived_at timestamptz;
+    create table public.psi_tender_closure_acta (id uuid primary key default gen_random_uuid(), closure_kind text);`);
+  await pg.exec(m234);
+  assert.equal(await status(pg), 'no_presentada');
+  const t = (await pg.query(`select from_status, to_status, note from psi_tender_offer_status_transitions`)).rows;
+  assert.deepEqual(t, [{ from_status: 'en_preparacion', to_status: 'no_presentada', note: 'No se presentó: Varios procesos a la vez.' }]);
+  await pg.close();
+  const otra = await db({ con234: true });
+  await registerTenderOfferSubmission(client(otra), { opportunityId: O, actorId: KATHERINE, body: TERMINAL });
+  assert.equal(await status(otra), 'presentada');
+  await otra.close();
 });
 
 test('append-only, sólo service_role, meta 2027 de Juan, y la reversa', async () => {

@@ -112,7 +112,7 @@ export const AGT002_CLOSURE_ACTA_OUTPUT_SCHEMA = Object.freeze({
   },
 });
 
-const CLOSURE_KINDS = new Set(['adjudicada', 'no_adjudicada', 'cerrada_no_go', 'archivada']);
+const CLOSURE_KINDS = new Set(['adjudicada', 'no_adjudicada', 'cerrada_no_go', 'no_presentada', 'archivada']);
 
 /**
  * Análisis vigente de Vig-IA (pre_go_analysis.v2, INITIAL/REANALYSIS desde el 6-oct): hallazgos, requisitos que la

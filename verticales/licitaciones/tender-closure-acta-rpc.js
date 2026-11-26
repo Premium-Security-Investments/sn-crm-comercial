@@ -77,7 +77,7 @@ function mapError(error) {
   return error;
 }
 
-const CLOSED_OFFER_STATUSES = new Set(['cerrada_no_go', 'adjudicada', 'no_adjudicada']);
+const CLOSED_OFFER_STATUSES = new Set(['cerrada_no_go', 'no_presentada', 'adjudicada', 'no_adjudicada']);
 
 /** Cómo se cerró la licitación, o null si sigue abierta. La vista de la ficha no trae `archived_at`. */
 function closureKind(opportunity) {

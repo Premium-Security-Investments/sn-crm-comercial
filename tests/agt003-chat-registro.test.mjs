@@ -267,7 +267,7 @@ test('servidor: las tres fechas que escribe el chat pasan por la conversión', (
   const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
   assert.equal(server, api, 'el espejo de Vercel queda igual');
   assert.match(server, /occurred_at: chatDayToIso\(action\.fecha\), interaction_type: action\.canal \}/, 'seguimiento registrado');
-  assert.match(server, /update\(\{ next_action_at: chatDayToIso\(action\.fecha\) \}\)/, 'próximo seguimiento');
+  assert.match(server, /const patch = \{ next_action_at: chatDayToIso\(action\.fecha\) \};/, 'próximo seguimiento');
   assert.match(server, /next_action_at: chatDayToIso\(action\.proxima_fecha\) \|\| null,/, 'oportunidad nueva');
   assert.match(server, /occurred_at: chatDayToIso\(action\.fecha\), interaction_type: action\.canal \|\| 'nota' \}/, 'nota de la oportunidad nueva');
   assert.doesNotMatch(server, /occurred_at: action\.fecha\b/, 'ya no queda ninguna fecha del chat sin convertir');

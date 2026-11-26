@@ -26,6 +26,8 @@ export const CAPABILITY_PERMISSIONS = Object.freeze([
   // Estudios de Seguridad, tramo 3 (migración 180): revisor técnico y aprobador. Nunca sobre un estudio propio.
   freezePermission('estudios_seguridad_revisar', 'Revisa estudios de seguridad', 'Revisor técnico: devuelve con observaciones o da por revisado un estudio de seguridad que no preparó.'),
   freezePermission('estudios_seguridad_aprobar', 'Aprueba estudios de seguridad', 'Aprueba la versión de un estudio de seguridad que no preparó, y puede reabrirlo.'),
+  // Cotizador de modelos de servicio (migración 235): precios, costos y márgenes de clientes. Va dentro de la Torre.
+  freezePermission('siio_cotizador_modelos', 'Cotizador de modelos de servicio', 'Ve y usa el cotizador de modelos de servicio de Gerencia (precios, costos y márgenes de clientes).'),
 ]);
 
 export const CAPABILITY_PERMISSION_CODES = Object.freeze(CAPABILITY_PERMISSIONS.map(({ code }) => code));

@@ -675,7 +675,11 @@ td.numeric-value{white-space:nowrap}
 .view-mode-toggle{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}.view-mode-toggle button{min-height:34px;padding:6px 8px;border-radius:10px;font-size:12px;font-weight:850}.view-mode-toggle button.active{background:#1b64f2;color:#fff;border-color:#1b64f2}
 /* Dashboard comercial: tres preguntas */
 .dashboard-three-questions{gap:22px}.dashboard-question .v2-deal-row{grid-template-columns:minmax(0,1fr) minmax(130px,.34fr) auto}.dashboard-details>summary{cursor:pointer;font-weight:900;color:#10213d}.dashboard-details[open]>summary{margin-bottom:12px}.dashboard-footnote{margin:0;font-size:12.5px}.dashboard-simple-list{display:grid;gap:8px;margin:0;padding:0;list-style:none}.dashboard-simple-list li{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}.dashboard-simple-list span{color:#526173;font-size:13px}
-.behavior-table table{min-width:980px}.behavior-table td small{color:#64748b}.behavior-explanation{font-size:12.5px;line-height:1.45;margin:0}
+.behavior-table table{min-width:760px;width:100%;table-layout:auto}.behavior-table td small{display:block;color:#64748b;font-size:12px;margin-top:2px}
+.behavior-table th{white-space:normal}.behavior-table th:nth-child(1),.behavior-table td:nth-child(1){width:34%}
+.dashboard-quality-line{margin:10px 0 0;padding:10px 14px;border-radius:12px;background:#f1f5f9;color:#334155;font-size:14px}
+.dashboard-quality-line.is-warning{background:#fff7e6;color:#7a4a00;border:1px solid #f3d9a4}
+.v2-deal-vigia{display:block;margin-top:4px;color:#1b4fd0;font-weight:600}.behavior-explanation{font-size:12.5px;line-height:1.45;margin:0}
 /* ===== Mi día del comercial (rediseño del 2026-10-22) =====
    Juan: "todo es como lo mismo, no hay jerarquías de nada, no hay divisiones". La respuesta es una sola
    superficie elevada —"Ahora"— y todo lo demás en filas planas sobre el fondo, con separadores reales.
@@ -899,6 +903,11 @@ td.numeric-value{white-space:nowrap}
 .user-menu-item{display:flex;align-items:center;gap:8px;background:none;color:#10213d;box-shadow:none;padding:8px 6px;border-radius:8px;font-weight:500;font-size:14px;text-align:left}
 .user-menu-item:hover{background:#f1f5f9}
 .user-menu-item.is-exit{color:#a12622}
+.user-menu-whatsapp{display:flex;flex-direction:column;gap:6px;padding:8px 6px}
+.user-menu-whatsapp label{display:flex;flex-direction:column;gap:4px;font-weight:700;font-size:13px;color:#10213d}
+.user-menu-whatsapp small{color:#5d6b82;font-size:12px;line-height:1.35}
+.user-menu-whatsapp .user-menu-error{color:#a12622}
+.user-menu-whatsapp-actions{display:flex;gap:8px}
 @media(max-width:900px){.user-menu-name{display:none}.topbar-right{margin-left:0}}
 /* Archivadas: consulta, no paso del proceso. */
 .opportunity-filter-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
@@ -1105,6 +1114,12 @@ td.numeric-value{white-space:nowrap}
 .avancys-cobro-table th:nth-child(1),.avancys-cobro-table td:nth-child(1){width:34%}
 .avancys-cobro-table th:nth-child(2),.avancys-cobro-table td:nth-child(2){width:10%;text-align:right}
 .avancys-cobro-table th:nth-child(n+3),.avancys-cobro-table td:nth-child(n+3){width:18.66%;text-align:right}
+/* Detalle de pagos de una comisión (2026-11-25): tabla propia, sin los anchos de la de afuera. */
+.avancys-cobro-table .commission-detail-row > td{padding:0 12px 14px;background:#fbfdff}
+.avancys-cobro-table .commission-detail-row table{table-layout:auto;min-width:860px;width:100%}
+.avancys-cobro-table .commission-detail-row th,.avancys-cobro-table .commission-detail-row td{width:auto;padding:8px 10px;font-size:13px;text-align:left}
+.avancys-cobro-table .commission-detail-row .money-cell,.avancys-cobro-table .commission-detail-row .numeric-value{text-align:right;white-space:nowrap}
+.avancys-cobro-table .commission-detail-row small{display:block;font-weight:400}
 .crm-readable-table.deal-mix-table table{min-width:520px;width:100%}
 .deal-mix-table th:nth-child(1),.deal-mix-table td:nth-child(1){width:46%}
 .deal-mix-table th:nth-child(n+2),.deal-mix-table td:nth-child(n+2){width:27%;text-align:right}
@@ -1146,6 +1161,10 @@ td.numeric-value{white-space:nowrap}
 .quote-list a,.quote-list li>span{display:flex;flex-direction:column;gap:2px;padding:12px 4px;color:inherit;text-decoration:none}
 .quote-list a:hover{background:#f5f9ff}
 .quote-list small{color:#5d6b82}
+.quote-list-item{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.quote-list-item>a{flex:1 1 260px;min-width:0}
+.quote-list-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 4px}
+.quote-list-actions select{width:220px;max-width:100%;padding-top:8px;padding-bottom:8px}
 .quote-kind{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
 .quote-kind span{font-weight:700;color:#31445f}
 .quote-kind button{background:#fff;color:#31445f;border:1px solid #cbd7e8}
@@ -1234,3 +1253,50 @@ td.numeric-value{white-space:nowrap}
 .ally-rup-grid{display:grid;grid-template-columns:190px minmax(0,1fr);gap:4px 10px;margin:0;font-size:13px}.ally-rup-grid dd{margin:0;overflow-wrap:anywhere}
 .tender-allies-rup-line{display:block;color:#526173;font-size:12px}
 @media(max-width:700px){.ally-rup-grid{grid-template-columns:minmax(0,1fr)}.ally-rup-grid dt{margin-top:6px}}
+
+/* Mi día con licitaciones y clientes privados (Juan, 2026-11-25): dos secciones con título y color propios, y arriba una
+   línea de cada una. Quien trabaja una sola cosa no ve títulos ni separación. */
+.my-day-worlds-lead{display:grid;gap:6px;font-size:16px;line-height:1.45;color:#172033}
+.my-day-worlds-lead p{margin:0}
+.my-day-worlds-lead a{text-decoration:none}
+.my-day-worlds-lead a strong{color:#1b4fd0}
+.my-day-worlds-lead a:hover strong{text-decoration:underline}
+.my-day-world{display:flex;flex-direction:column;gap:18px;scroll-margin-top:16px}
+.my-day-world:not(.is-alone){padding:18px 0 0;border-top:4px solid #1b4fd0}
+.my-day-world.is-clients:not(.is-alone){border-top-color:#0f766e}
+.my-day-world-h{margin:0;font-size:13px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#1b4fd0}
+.my-day-world.is-clients .my-day-world-h{color:#0f766e}
+.my-day-world-lead{margin:-8px 0 0;font-size:18px;font-weight:700;line-height:1.3;color:#172033;max-width:46ch}
+/* Formulario de decisión (Juan, 2026-11-25: «no se están aprovechando bien los espacios»): alineado con el título, las
+   cinco decisiones en una línea y «Pedir eliminar» como enlace discreto; contacto y valor lado a lado; la fecha con sus
+   atajos en una fila; notas de dos líneas. */
+.decision-form{container-type:inline-size}
+.decision-panel .decision-form{padding:10px 0 0}
+.decision-choices{align-items:center}
+.decision-choice.decision-request_delete{flex:0 0 auto;margin-left:auto;padding:6px 4px;border:0;background:transparent;color:#b91c1c;font-size:12.5px;font-weight:700;text-decoration:underline;box-shadow:none}
+.decision-choice.decision-request_delete.is-active{border:0;background:transparent;color:#7f1d1d}
+.decision-fields{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 14px}
+.decision-fields .decision-date{grid-column:1 / -1;order:1}
+.decision-fields .decision-notes{order:2}
+.decision-date-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.decision-date-row input{flex:0 1 200px;min-width:160px}
+.decision-notes textarea{min-height:64px;resize:vertical}
+@container (max-width:420px){
+  .decision-fields{grid-template-columns:1fr}
+  .decision-choice.decision-request_delete{margin-left:0}
+}
+
+/* Contratos de clientes (2026-11-26). */
+.contratos-panel h3,.contratos-alerta h3{margin:0 0 6px}
+.contratos-cifras{margin:0 0 10px;color:#334155}
+.contratos-cifras strong{color:#10213d;font-size:18px}
+.contratos-alerta{border-left:4px solid #d97706}
+.contratos-panel details,.contratos-alerta details{margin-top:8px}
+
+/* Catálogo de Avancys en el cotizador (entrega 5a, 2026-11-26). */
+.quote-catalog{display:grid;gap:6px;margin:6px 0 12px}
+.quote-catalog label{display:flex;flex-direction:column;gap:4px;font-weight:700}
+.quote-catalog-results{list-style:none;margin:0;padding:0;border:1px solid #dfe8f4;border-radius:12px;max-height:340px;overflow:auto}
+.quote-catalog-results li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;border-top:1px solid #eef2f7}
+.quote-catalog-results li:first-child{border-top:0}
+.quote-catalog-results small{display:block;color:#64748b;font-size:12px}
