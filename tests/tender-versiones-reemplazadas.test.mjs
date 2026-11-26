@@ -119,3 +119,21 @@ test('versión ajustada: no confunde números, no reemplaza con una fecha anteri
   assert.deepEqual(archive(['Respuesta Observaciones LP-07-2026 _11-11-26.pdf'], ['Respuesta Observaciones ajustado 23112026.pdf']), []);
   assert.deepEqual(archive(['2. Estudios Previos 16-10-26 F.pdf'], ['Estudios Previos ajustados 23112026.pdf']), []);
 });
+
+test('Medicina Legal (25-nov): la definitiva con fecha posterior y el boletín republicado reemplazan; otro boletín no', () => {
+  const plan = planObsoleteTenderDocuments({
+    currentNames: ['FTN VIGILANCIA DEFINITIVA 19-11-2026.pdf', 'FTP VIGILANCIA DEFINITIVA 19-11-2026.pdf',
+      'BRN_B.R.N. 201 - INSTITUTO NACIONAL DE MEDICINA LEGAL Y CIENCIAS FORENSES_CORREAGRO S.A..pdf',
+      'BRN_B.R.N. 202 - INSTITUTO NACIONAL DE MEDICINA LEGAL Y CIENCIAS FORENSES_CORREAGRO S.A..pdf',
+      'ESTUDIOS PREVIOS ASEO Y CAFETERIA 2026 11-19.pdf', 'ANEXO 40 NOVIEMBRE 2025.pdf'],
+    incomingNames: ['FTN VIGILANCIA DEFINITIVA 25-11-2026.pdf', 'FTP VIGILANCIA DEFINITIVO 25-11-2026.pdf',
+      'BRN_REP_B.R.N. 201 - INSTITUTO NACIONAL DE MEDICINA LEGAL Y CIENCIAS FORENSES_CORREAGRO S.A. _1_.pdf'],
+  });
+  assert.deepEqual(plan.archive.map(item => [item.name.slice(0, 16), item.replacedBy.slice(0, 20)]), [
+    ['FTN VIGILANCIA D', 'FTN VIGILANCIA DEFIN'], ['FTP VIGILANCIA D', 'FTP VIGILANCIA DEFIN'], ['BRN_B.R.N. 201 -', 'BRN_REP_B.R.N. 201 -'],
+  ]);
+  // Una definitiva de fecha anterior no reemplaza a la vigente.
+  const backwards = planObsoleteTenderDocuments({ currentNames: ['FTN VIGILANCIA DEFINITIVA 25-11-2026.pdf'], incomingNames: ['FTN VIGILANCIA DEFINITIVA 19-11-2026.pdf'] });
+  assert.deepEqual(backwards.archive, []);
+});
+
