@@ -1285,3 +1285,10 @@ td.numeric-value{white-space:nowrap}
   .decision-fields{grid-template-columns:1fr}
   .decision-choice.decision-request_delete{margin-left:0}
 }
+
+/* Contratos de clientes (2026-11-26). */
+.contratos-panel h3,.contratos-alerta h3{margin:0 0 6px}
+.contratos-cifras{margin:0 0 10px;color:#334155}
+.contratos-cifras strong{color:#10213d;font-size:18px}
+.contratos-alerta{border-left:4px solid #d97706}
+.contratos-panel details,.contratos-alerta details{margin-top:8px}

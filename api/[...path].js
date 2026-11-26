@@ -91,6 +91,7 @@ import { isAgt003CommercialOpportunity } from '../src/vigia/commercial-scope.js'
 import { DEFAULT_GUARD_RATES, DEFAULT_TECH_RATES, normalizeGuardRates, normalizeTechRates, quoteTotals, ratesInEffect } from '../src/vigia/quote-engine.js';
 import { GUARD_OPPORTUNITY_TYPE, TECH_OPPORTUNITY_TYPE, opportunityValuesFromQuote } from '../src/vigia/quote-proposal.js';
 import { calcularComisiones } from '../src/vigia/comisiones.js';
+import { contratosDeClientes, resumenContratos } from '../src/vigia/contratos-clientes.js';
 import { CLIENT_DEAL_FIELD, CLIENT_PROFILE_FIELDS, hasClientProfileFields, normalizeClientDeal, normalizeClientProfile, profileCompleteness } from '../src/vigia/client-profile.js';
 import { LEAD_ANALYSIS_CONTRACT_VERSION, bogotaMonthStartIso, monthlyMaxFrom } from '../src/vigia/lead-analysis.js';
 import { AGT003_MODEL_FAILURE, agt003ModelFailureMessage, classifyAgt003ModelFailure } from '../src/vigia/model-failures.js';
@@ -521,6 +522,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/vigia/commercial-behavior': ['vigia', ACTIONS.MODULE_DASHBOARD_VIEW],
   'GET /api/agt003/avancys/cobro-por-comercial': ['vigia', ACTIONS.MODULE_DASHBOARD_VIEW],
   'GET /api/agt003/avancys/comisiones': ['vigia', ACTIONS.MODULE_DASHBOARD_VIEW],
+  'GET /api/agt003/contratos-clientes': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'GET /api/agt003/quote-rates': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
   'POST /api/agt003/quote-rates': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
   'GET /api/agt003/quotes': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
@@ -4709,6 +4711,41 @@ async function closureFormState(database, opportunity) {
 // Falla blanda en los dos puntos donde puede faltar algo: un comercial sin equivalencia y un
 // despliegue sin credenciales devuelven una lista vacía CON su razón escrita, nunca un error. Que
 // Avancys no conteste no puede tumbarle la pantalla a nadie.
+// AGT-003 — Contratos de los clientes: estado y vencimiento (Juan, 2026-11-26). Las fechas salen de Avancys cuando las
+// tenga y, mientras tanto, del archivo cargado en psi_client_contracts (migración 238); cada fila dice su fuente. El
+// alcance es el de «Mis clientes»: el comercial ve los clientes que tiene asignados en Avancys; dirección, todos, salvo
+// que pida `alcance=propios` (Mi día). Si Avancys no responde, salen las fechas del archivo y sin comercial.
+app.get('/api/agt003/contratos-clientes', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
+    const database = requireDb();
+    res.set('Cache-Control', 'private, no-store');
+    const { data: archivo, error } = await database.from('psi_client_contracts')
+      .select('nit,razon_social,fecha_inicio,fecha_ultima_renovacion,fecha_fin,observacion,fuente').order('razon_social');
+    if (error) {
+      if (error.code === '42P01') return res.json({ contratos: [], resumen: {}, motivo: 'La tabla de contratos todavía no existe (migración 238).' });
+      throw error;
+    }
+    const { data: mapa, error: errorMapa } = await database.from('psi_avancys_salesperson_map').select('odoo_user_id').eq('profile_id', currentProfile.id);
+    if (errorMapa) throw errorMapa;
+    const propios = new Set((mapa || []).map(fila => fila.odoo_user_id));
+    const todos = veTodaLaCarteraComercial(currentProfile) && req.query.alcance !== 'propios';
+    let avancys = {};
+    let motivo = null;
+    const lector = crearLectorAvancys();
+    if (lector) {
+      try { avancys = await lector.clientesPorNit({ nits: (archivo || []).map(fila => fila.nit) }); } catch (falla) {
+        if (!falla?.codigo) throw falla;
+        motivo = `Avancys no respondió (${falla.codigo}): se muestran las fechas del archivo, sin el comercial de cada cliente.`;
+      }
+    } else motivo = 'Avancys no está configurado en este ambiente: se muestran las fechas del archivo, sin el comercial.';
+    const contratos = contratosDeClientes(archivo || [], avancys, bogotaDay(new Date()))
+      .filter(c => todos || (c.comercial_id !== null && propios.has(c.comercial_id)));
+    res.json({ alcance: todos ? 'todos' : 'propios', hoy: bogotaDay(new Date()), contratos, resumen: resumenContratos(contratos), motivo });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
 app.get('/api/avancys/mis-clientes', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
