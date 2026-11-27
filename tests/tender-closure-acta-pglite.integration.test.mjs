@@ -9,6 +9,7 @@ import { PGlite } from '@electric-sql/pglite';
 const strip = value => value.replace(/^\s*begin;\s*$/im, '').replace(/^\s*commit;\s*$/im, '');
 const migration134 = strip(readFileSync(new URL('../supabase/migrations/134_tender_closure_acta.sql', import.meta.url), 'utf8'));
 const rollback134 = strip(readFileSync(new URL('../supabase/rollbacks/134_tender_closure_acta_rollback.sql', import.meta.url), 'utf8'));
+const migration241 = strip(readFileSync(new URL('../supabase/migrations/241_acta_cierre_nota_no_presentada.sql', import.meta.url), 'utf8'));
 
 const JUAN = '11111111-1111-4111-8111-111111111111';
 const VIGIA = 'a0020000-0000-4000-8000-000000000002';
@@ -107,6 +108,14 @@ await (async function closingNoteComesFromWhereThePersonWroteIt() {
   await pg.exec(`insert into public.psi_tender_offer_status_transitions (opportunity_id, tender_id, actor_id, from_status, to_status, note)
     values ('${ADJUDICADA}', '99999999-9999-4999-8999-999999999999', '${JUAN}', 'presentada', 'adjudicada', 'La ganamos por precio y por el equipo propuesto.')`);
   assert.deepEqual(await callRpc(pg, 'psi_tender_closure_note', [ADJUDICADA]), { note: 'La ganamos por precio y por el equipo propuesto.', source: 'status_transition' });
+
+  // No presentada (241): la nota también vive en la transición. Sin la 241 la función devolvía null y SIC 23 quedó sin acta.
+  await pg.exec(`insert into public.psi_sales_opportunities (id, company_name, tender_offer_status) values ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'SIC', 'no_presentada');
+    insert into public.psi_tender_offer_status_transitions (opportunity_id, tender_id, actor_id, from_status, to_status, note)
+    values ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', '${JUAN}', 'en_preparacion', 'no_presentada', 'No se presentó: estábamos en varios procesos al tiempo.')`);
+  assert.equal(await callRpc(pg, 'psi_tender_closure_note', ['cccccccc-cccc-4ccc-8ccc-cccccccccccc']), null, 'sin la 241, «no presentada» no tenía nota');
+  await pg.exec(migration241);
+  assert.deepEqual(await callRpc(pg, 'psi_tender_closure_note', ['cccccccc-cccc-4ccc-8ccc-cccccccccccc']), { note: 'No se presentó: estábamos en varios procesos al tiempo.', source: 'status_transition' });
 
   // Archivada: la nota vive en archive_note y manda sobre las demás.
   await pg.exec(`update public.psi_sales_opportunities set archived_at = now(), archive_note = 'Falta de sede en Bolívar, Casanare y Nariño.' where id = '${NO_GO}'`);
