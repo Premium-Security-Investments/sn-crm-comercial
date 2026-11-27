@@ -47,10 +47,22 @@ export function CotizadorModelos() {
   };
   useEffect(() => { cargar(); }, []);
 
+  // Precio de la analítica de cada opción: la A es `analitica`; B, C y D viven en `opciones` (las del escenario, o las de
+  // partida si el escenario no las trae); la E en `opcionE`. Todas se pueden cambiar desde la pantalla.
+  const precioOpcion = (codigo: string) => {
+    if (codigo === 'A') return s.analitica;
+    if (codigo === 'E') return s.opcionE.analitica;
+    return (s.opciones?.find(o => o.codigo === codigo) ?? OPCIONES.find(o => o.codigo === codigo))?.analitica ?? 0;
+  };
+  const cambiarPrecioOpcion = (codigo: string, n: number) => {
+    if (codigo === 'A') return cambiar({ analitica: n });
+    if (codigo === 'E') return cambiar({ opcionE: { ...s.opcionE, analitica: n } });
+    const base = s.opciones?.length ? s.opciones : OPCIONES;
+    cambiar({ opciones: base.map(o => (o.codigo === codigo ? { ...o, analitica: n } : o)) });
+  };
   const supuestos = useMemo(() => {
-    const op = OPCIONES.find(o => o.codigo === opcion);
-    const analitica = opcion === 'E' ? s.opcionE.analitica : opcion === 'A' ? s.analitica : op?.analitica ?? s.analitica;
-    return { ...s, analitica, opciones: OPCIONES.map(o => (o.codigo === 'A' ? { ...o, analitica: s.analitica } : o)) };
+    const analitica = precioOpcion(opcion);
+    return { ...s, analitica, opciones: OPCIONES.map(o => ({ ...o, analitica: precioOpcion(o.codigo) })) };
   }, [s, opcion]);
   const r = useMemo(() => (datos ? calcularModelo(datos.tiendas, supuestos) : null), [datos, supuestos]);
 
@@ -98,8 +110,8 @@ export function CotizadorModelos() {
           <label>Unidad de reacción (turno de 12 h)</label><Numero valor={s.precioUnidad} paso={0.5} sufijo="M al mes" onChange={n => cambiar({ precioUnidad: n })} />
           <label>Opción de analítica</label>
           <div className="cm-ops">{OPCIONES.map(o => <button type="button" key={o.codigo} className={o.codigo === opcion ? 'on' : ''} onClick={() => setOpcion(o.codigo)}>{o.codigo}</button>)}</div>
-          {opcion === 'A' && <><label>Analítica por tienda (opción A)</label><Numero valor={s.analitica} paso={0.25} sufijo="M al mes" onChange={n => cambiar({ analitica: n })} /></>}
-          {opcion === 'E' && <><label>Opción E: analítica por tienda</label><Numero valor={s.opcionE.analitica} paso={0.25} sufijo="M al mes" onChange={n => cambiar({ opcionE: { ...s.opcionE, analitica: n } })} />
+          <label>Analítica por tienda (opción {opcion})</label><Numero valor={precioOpcion(opcion)} paso={0.25} sufijo="M al mes" onChange={n => cambiarPrecioOpcion(opcion, n)} />
+          {opcion === 'E' && <>
             <label>Opción E: parte de la merma evitada</label><Numero valor={Math.round(s.opcionE.parteMerma * 100)} sufijo="%" onChange={n => cambiar({ opcionE: { ...s.opcionE, parteMerma: n / 100 } })} /></>}
         </section>
         <section className="cm-hoja"><h2>Cobertura<small>Tiendas por unidad de reacción · día / noche</small></h2>
