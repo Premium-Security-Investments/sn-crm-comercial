@@ -15,6 +15,7 @@ const VACIO: SupuestosModelo = {
   proporciones: { A: { dia: 10, noche: 10 }, B: { dia: 5, noche: 10 }, C: { dia: 10, noche: 20 } },
   personasPorTurno: 2, costoPersona: 0, costoAnalitica: 0, valorGuardaNuevo: 0, reduccionMerma: 0.1,
   opcionE: { analitica: 0, parteMerma: 0.5 }, opciones: OPCIONES,
+  central: { puestosHoy: 0, puestosModelo: 0, personasPorPuesto: 3, costoPersona: 0 },
 };
 
 const entero = (n: number) => Math.round(n).toLocaleString('es-CO');
@@ -67,6 +68,8 @@ export function CotizadorModelos() {
   const r = useMemo(() => (datos ? calcularModelo(datos.tiendas, supuestos) : null), [datos, supuestos]);
 
   const cambiar = (parcial: Partial<SupuestosModelo>) => setS(prev => ({ ...prev, ...parcial }));
+  const central = { ...VACIO.central!, ...(s.central || {}) };
+  const cambiarCentral = (parcial: Partial<NonNullable<SupuestosModelo['central']>>) => cambiar({ central: { ...central, ...parcial } });
   const proporcion = (nivel: Nivel, turno: 'dia' | 'noche', n: number) => setS(prev => ({ ...prev, proporciones: { ...prev.proporciones, [nivel]: { ...prev.proporciones[nivel], [turno]: n } } }));
   const zona = (nombre: string, parcial: Partial<SupuestosModelo['zonas'][string]>) => setS(prev => ({ ...prev, zonas: { ...prev.zonas, [nombre]: { ...prev.zonas[nombre], ...parcial } } }));
 
@@ -126,6 +129,11 @@ export function CotizadorModelos() {
           <label>Personas por turno de 12 h</label><Numero valor={s.personasPorTurno} paso={0.1} onChange={n => cambiar({ personasPorTurno: n })} />
           <label>Costo por persona</label><Numero valor={s.costoPersona} paso={0.1} sufijo="M al mes" onChange={n => cambiar({ costoPersona: n })} />
           <label>Costo de la analítica por tienda</label><Numero valor={s.costoAnalitica} paso={0.1} sufijo="M al mes" onChange={n => cambiar({ costoAnalitica: n })} />
+          <h3>Central de monitoreo</h3>
+          <label>Puestos de operador 24 h hoy</label><Numero valor={central.puestosHoy} onChange={n => cambiarCentral({ puestosHoy: n })} />
+          <label>Puestos de operador 24 h con el modelo</label><Numero valor={central.puestosModelo} onChange={n => cambiarCentral({ puestosModelo: n })} />
+          <label>Personas por puesto de 24 h</label><Numero valor={central.personasPorPuesto} paso={0.5} onChange={n => cambiarCentral({ personasPorPuesto: n })} />
+          <label>Costo por operador</label><Numero valor={central.costoPersona} paso={0.1} sufijo="M al mes" onChange={n => cambiarCentral({ costoPersona: n })} />
           <label>Guarda nuevo en tienda A sin guarda</label><Numero valor={s.valorGuardaNuevo} paso={0.5} sufijo="M al mes" onChange={n => cambiar({ valorGuardaNuevo: n })} />
         </section>
       </aside>
@@ -160,7 +168,8 @@ export function CotizadorModelos() {
         </div>
         <section className="cm-hoja cm-interna"><h2>Nuestro lado <span className="cm-insignia">INTERNO · no se muestra al cliente</span></h2>
           <table><thead><tr><th></th><th>Hoy</th><th>Con el modelo (opción {opcion})</th></tr></thead>
-            <tbody><tr><td>Ingreso</td><td>{entero(t.valor)}</td><td>{entero(t.totalModelo)}</td></tr><tr><td>Costo</td><td>{entero(t.costoHoy)}</td><td>{entero(t.costoModelo)}</td></tr></tbody>
+            <tbody><tr><td>Ingreso</td><td>{entero(t.valor)}</td><td>{entero(t.totalModelo)}</td></tr><tr><td>Costo</td><td>{entero(t.costoHoy)}</td><td>{entero(t.costoModelo)}</td></tr>
+              {t.ahorroCentral !== 0 && <tr><td>Central de monitoreo ({entero(t.centralPersonasHoy)} → {entero(t.centralPersonasModelo)} operadores), ya restado del costo</td><td></td><td className={t.ahorroCentral > 0 ? 'cm-bien' : 'cm-mal'}>{t.ahorroCentral > 0 ? '−' : '+'}{entero(Math.abs(t.ahorroCentral))}</td></tr>}</tbody>
             <tfoot><tr><td>Margen</td><td>{entero(t.margenHoy)} ({t.valor ? Math.round((t.margenHoy / t.valor) * 100) : 0} %)</td><td>{entero(t.margenModelo)} ({t.totalModelo ? Math.round((t.margenModelo / t.totalModelo) * 100) : 0} %)</td></tr></tfoot></table>
           {r.unidad.pierde
             ? <div className="notice error">Cada unidad de reacción cuesta {r.unidad.costo.toFixed(1).replace('.', ',')} M y se cobra a {r.unidad.precio} M: pierde plata.</div>

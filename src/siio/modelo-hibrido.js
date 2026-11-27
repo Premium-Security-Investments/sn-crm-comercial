@@ -119,6 +119,20 @@ export function calcularModelo(tiendas, supuestos = {}) {
   }
   total.frenteAHoyPct = total.valor ? total.frenteAHoy / total.valor : 0;
 
+  // Central de monitoreo (Juan, 2026-11-27): hoy hay un centro por CEDI; con el modelo se concentran en menos centros y con
+  // menos operadores, y desde ellos se monitorean todas las tiendas. Los operadores no se le cobran aparte al cliente (van
+  // dentro de los puestos de los CEDI), así que lo que cambia es nuestro costo: el ahorro suma al margen del modelo.
+  const central = supuestos.central || {};
+  const personasPorPuestoCentral = numero(central.personasPorPuesto, 3);
+  const personasCentralHoy = numero(central.puestosHoy) * personasPorPuestoCentral;
+  const personasCentralModelo = numero(central.puestosModelo) * personasPorPuestoCentral;
+  const ahorroCentral = (personasCentralHoy - personasCentralModelo) * numero(central.costoPersona);
+  total.centralPersonasHoy = personasCentralHoy;
+  total.centralPersonasModelo = personasCentralModelo;
+  total.ahorroCentral = ahorroCentral;
+  total.costoModelo -= ahorroCentral;
+  total.margenModelo += ahorroCentral;
+
   // Opciones de precio de la analítica: solo cambia la analítica; el personal es el mismo.
   const costoTotal = total.costoModelo;
   const mermaEvitada = total.merma * numero(supuestos.reduccionMerma);

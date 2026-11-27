@@ -12,6 +12,7 @@ export type SupuestosModelo = {
   valorGuardaNuevo: number;
   reduccionMerma: number;
   opcionE: { analitica: number; parteMerma: number; meses?: number };
+  central?: { puestosHoy: number; puestosModelo: number; personasPorPuesto: number; costoPersona: number };
   opciones: { codigo: string; etiqueta?: string; analitica?: number }[];
 };
 export type ZonaModelo = {

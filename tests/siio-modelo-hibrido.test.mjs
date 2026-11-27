@@ -86,3 +86,16 @@ test('una zona fuera del modelo no pide proporciones ni suma unidades', () => {
   assert.equal(r.total.tiendas, 0);
   assert.ok(r.zonas.every(z => z.unidades === 0 && !z.proporcionInvalida));
 });
+
+test('la central de monitoreo: menos puestos baja nuestro costo y sube el margen, sin tocar lo que paga el cliente', () => {
+  const sin = calcularModelo(tiendas, supuestos);
+  const con = calcularModelo(tiendas, { ...supuestos, central: { puestosHoy: 15, puestosModelo: 10, personasPorPuesto: 3, costoPersona: 4 } });
+  assert.equal(con.total.centralPersonasHoy, 45);
+  assert.equal(con.total.centralPersonasModelo, 30);
+  assert.equal(con.total.ahorroCentral, 60);
+  assert.equal(con.total.totalModelo, sin.total.totalModelo);
+  assert.ok(Math.abs(con.total.margenModelo - (sin.total.margenModelo + 60)) < 1e-9);
+  assert.ok(Math.abs(con.opciones[0].margen - (sin.opciones[0].margen + 60)) < 1e-9);
+  // Sin datos de central no cambia nada.
+  assert.equal(sin.total.ahorroCentral, 0);
+});
