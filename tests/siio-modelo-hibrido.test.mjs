@@ -99,3 +99,22 @@ test('la central de monitoreo: menos puestos baja nuestro costo y sube el margen
   // Sin datos de central no cambia nada.
   assert.equal(sin.total.ahorroCentral, 0);
 });
+
+test('conserva guarda con analítica: mantiene todos los guardas, suma analítica y entra al total', () => {
+  const r = calcularModelo(tiendas, { ...supuestos, zonas: { ...supuestos.zonas, Sur: { modo: 'guarda_analitica', margen: 0.25, supervisoresHoy: 0.5 } } });
+  const sur = r.zonas.find(z => z.zona === 'Sur');
+  assert.equal(sur.modo, 'guarda_analitica');
+  assert.equal(sur.unidades, 0);
+  assert.equal(sur.guardasModelo, sur.puestos);
+  assert.equal(sur.valorGuardasModelo, sur.valor);
+  assert.equal(sur.valorAnalitica, 6 * 2);
+  assert.equal(sur.frenteAHoy, 12);
+  assert.equal(r.total.tiendas, 25 + 6);
+  assert.ok(Math.abs(sur.margenModelo - (sur.margenHoy + 6 * (2 - 0.5))) < 1e-9);
+});
+
+test('los escenarios viejos con enModelo siguen funcionando', () => {
+  const r = calcularModelo(tiendas, supuestos);
+  assert.equal(r.zonas.find(z => z.zona === 'Norte').modo, 'modelo');
+  assert.equal(r.zonas.find(z => z.zona === 'Sur').modo, 'fuera');
+});

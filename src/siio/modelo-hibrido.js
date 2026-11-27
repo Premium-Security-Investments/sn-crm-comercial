@@ -13,6 +13,19 @@
 
 export const NIVELES = Object.freeze(['A', 'B', 'C']);
 
+// Cómo entra cada zona (Juan, 2026-11-27):
+//   · fuera: sigue como hoy, no suma a la oferta;
+//   · guarda_analitica: conserva todos sus guardas y suma la analítica por tienda (p. ej. pueblos sin personal para
+//     unidades de reacción);
+//   · modelo: modelo híbrido completo (guarda solo en A, unidades de reacción y analítica).
+export const MODOS_ZONA = Object.freeze(['fuera', 'guarda_analitica', 'modelo']);
+
+/** Modo de una zona; los escenarios guardados antes de los modos traen `enModelo` (true = modelo). */
+export function modoDeZona(c = {}) {
+  if (MODOS_ZONA.includes(c.modo)) return c.modo;
+  return c.enModelo === true ? 'modelo' : 'fuera';
+}
+
 const numero = (valor, porDefecto = 0) => {
   const n = Number(valor);
   return Number.isFinite(n) ? n : porDefecto;
@@ -67,7 +80,7 @@ export function resumirZonas(tiendas = []) {
 /**
  * Calcula el modelo para todas las zonas.
  * supuestos: {
- *   zonas: { [zona]: { enModelo, margen, supervisoresHoy } },
+ *   zonas: { [zona]: { modo: 'fuera' | 'guarda_analitica' | 'modelo', margen, supervisoresHoy } },
  *   precioUnidad, analitica, proporciones: { A|B|C: { dia, noche } },
  *   personasPorTurno, costoPersona, costoAnalitica, valorGuardaNuevo,
  *   reduccionMerma, opcionE: { analitica, parteMerma }
@@ -85,7 +98,9 @@ export function calcularModelo(tiendas, supuestos = {}) {
 
   const zonas = zonasBase.map(z => {
     const c = conf[z.zona] || {};
-    const enModelo = c.enModelo === true;
+    const modo = modoDeZona(c);
+    const enModelo = modo === 'modelo';
+    const conAnalitica = modo !== 'fuera';
     const margen = numero(c.margen);
     const supervisoresHoy = numero(c.supervisoresHoy);
     const dia = enModelo ? unidadesDeTurno(z, supuestos.proporciones, 'dia') : 0;
@@ -94,16 +109,16 @@ export function calcularModelo(tiendas, supuestos = {}) {
     const guardasModelo = enModelo ? z.puestosA + z.tiendasASinGuarda : z.puestos;
     const valorGuardasModelo = enModelo ? z.valorA + z.tiendasASinGuarda * valorGuardaNuevo : z.valor;
     const valorUnidades = unidades * precioUnidad;
-    const valorAnalitica = enModelo ? z.tiendas * analitica : 0;
+    const valorAnalitica = conAnalitica ? z.tiendas * analitica : 0;
     const personalModelo = valorGuardasModelo + valorUnidades;
     const totalModelo = personalModelo + valorAnalitica;
     // Nuestro lado (interno). Hoy los supervisores no se cobran: su costo sale del margen del guarda.
     const costoSupervisoresHoy = supervisoresHoy * costoPersona;
     const margenHoy = z.valor * margen - costoSupervisoresHoy;
     const personasUnidades = enModelo ? Math.max(unidades * personasPorTurno, supervisoresHoy) : supervisoresHoy;
-    const costoModelo = valorGuardasModelo * (1 - margen) + personasUnidades * costoPersona + (enModelo ? z.tiendas * costoAnalitica : 0);
+    const costoModelo = valorGuardasModelo * (1 - margen) + personasUnidades * costoPersona + (conAnalitica ? z.tiendas * costoAnalitica : 0);
     return {
-      ...z, enModelo, margen, supervisoresHoy,
+      ...z, modo, enModelo, incluida: conAnalitica, margen, supervisoresHoy,
       unidadesDia: dia ?? 0, unidadesNoche: noche ?? 0, unidades, proporcionInvalida: enModelo && (dia === null || noche === null),
       guardasModelo, valorGuardasModelo, valorUnidades, valorAnalitica, personalModelo, totalModelo,
       frenteAHoy: totalModelo - z.valor,
@@ -111,7 +126,8 @@ export function calcularModelo(tiendas, supuestos = {}) {
     };
   });
 
-  const enModelo = zonas.filter(z => z.enModelo);
+  // La oferta suma las zonas que llevan algo nuevo: modelo completo o guarda con analítica.
+  const enModelo = zonas.filter(z => z.incluida);
   const suma = (lista, campo) => lista.reduce((acc, z) => acc + numero(z[campo]), 0);
   const total = {};
   for (const campo of ['tiendas', 'A', 'B', 'C', 'sinGuarda', 'puestos', 'guardasModelo', 'unidadesDia', 'unidadesNoche', 'unidades', 'valor', 'valorGuardasModelo', 'valorUnidades', 'valorAnalitica', 'personalModelo', 'totalModelo', 'frenteAHoy', 'merma', 'costoHoy', 'margenHoy', 'personasUnidades', 'costoModelo', 'margenModelo']) {
