@@ -143,6 +143,7 @@ import { assertPublicActuationType, PUBLIC_ACTUATION_TYPES } from '../verticales
 import { buildAgt002AnalysisConfig } from '../verticales/licitaciones/agt002-analysis-config.js';
 import { firebaseLoginProjectId, isFirebaseIdTokenFor, verifyFirebaseIdToken } from '../verticales/acceso/sesion-firebase.js';
 import { createDirectorioCuentas, loginDirectorioActivo } from '../verticales/acceso/directorio-cuentas.js';
+import { cabecerasSeguridad, lectorReporteCsp, recibirReporteCsp, CSP_REPORT_PATH, CSP_REPORT_CONTENT_TYPES } from '../verticales/acceso/cabeceras-seguridad.js';
 import { getAgt002VercelControlPlaneIdentity } from '../verticales/licitaciones/agt002-vercel-control-plane-identity.js';
 import { createAgt002AnalysisObservability } from '../verticales/licitaciones/agt002-analysis-observability.js';
 import { runAgt002PostBridgeAnalysis } from '../verticales/licitaciones/agt002-post-bridge-observability.js';
@@ -287,6 +288,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+// Cabeceras de seguridad (27-nov-2026, verticales/acceso/cabeceras-seguridad.js): antes de todo, también para el frente.
+app.disable('x-powered-by');
+app.use(cabecerasSeguridad(process.env));
+app.post(CSP_REPORT_PATH, lectorReporteCsp(express.json({ type: CSP_REPORT_CONTENT_TYPES, limit: '20kb' })), recibirReporteCsp);
 app.use(express.json({ limit: '25mb' }));
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
