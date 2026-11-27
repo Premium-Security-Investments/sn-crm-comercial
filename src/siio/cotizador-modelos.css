@@ -65,3 +65,11 @@
 .cm th { padding: 6px 8px; background: transparent; text-transform: none; letter-spacing: 0; white-space: normal; vertical-align: bottom; }
 .cm td { padding: 7px 8px; overflow-wrap: normal; white-space: nowrap; }
 .cm td:first-child { white-space: normal; min-width: 120px; }
+
+/* Las columnas de la grilla no se encogían por debajo del ancho de sus tablas: la última columna de la tabla por ciudad
+   quedaba cortada y la tarjeta de merma se salía por la derecha. min-width: 0 deja que cada tabla se desplace dentro de
+   su tarjeta; el relleno de las celdas baja un poco para que en una pantalla normal todo quepa sin desplazarse. */
+.cm-grilla > *, .cm-dos > * { min-width: 0; }
+.cm-tabla { max-width: 100%; }
+.cm th, .cm td { padding-left: 6px; padding-right: 6px; }
+.cm td:first-child { min-width: 104px; }
