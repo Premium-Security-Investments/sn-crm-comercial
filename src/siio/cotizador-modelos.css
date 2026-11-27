@@ -73,3 +73,13 @@
 .cm-tabla { max-width: 100%; }
 .cm th, .cm td { padding-left: 6px; padding-right: 6px; }
 .cm td:first-child { min-width: 104px; }
+
+/* Selector de cómo entra cada zona (fuera / conserva guarda con analítica / modelo completo). */
+.cm-zona { display: grid; grid-template-columns: 1fr; gap: 4px; padding: 7px 0; border-bottom: 1px solid #e3e9f2; }
+.cm-zona-nombre { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.cm-zona-nombre strong { font-weight: 600; color: #10213d; font-size: 13px; }
+.cm-zona-nombre small { color: #5d6b80; font-size: 12px; }
+.cm .cm-zona select { width: 100%; padding: 5px 8px; border-radius: 8px; font-size: 12.5px; }
+.cm-modo { display: block; font-size: 11px; color: #92400e; }
+/* Opciones y merma, una debajo de la otra: lado a lado no caben sin cortar columnas. */
+.cm-dos { grid-template-columns: 1fr; gap: 0; }

@@ -3,7 +3,13 @@
 // y los supuestos llegan de la base (GET /api/siio/cotizador-modelos), nunca del código.
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../apiClient';
-import { calcularModelo, type SupuestosModelo, type TiendaModelo, type Nivel } from './modelo-hibrido.js';
+import { calcularModelo, modoDeZona, type ModoZona, type SupuestosModelo, type TiendaModelo, type Nivel } from './modelo-hibrido.js';
+
+const MODOS: { valor: ModoZona; etiqueta: string }[] = [
+  { valor: 'modelo', etiqueta: 'Modelo completo' },
+  { valor: 'guarda_analitica', etiqueta: 'Conserva guarda, con analítica' },
+  { valor: 'fuera', etiqueta: 'Fuera (como hoy)' },
+];
 import './cotizador-modelos.css';
 
 type Escenario = { id: string; name: string; params: SupuestosModelo; is_baseline: boolean; created_at: string };
@@ -41,7 +47,7 @@ export function CotizadorModelos() {
       .then(d => {
         setDatos(d);
         const base = d.escenarios.find(e => e.is_baseline) || d.escenarios[0];
-        const zonas = Object.fromEntries([...new Set(d.tiendas.map(t => t.zona))].map(z => [z, { enModelo: false, margen: 0, supervisoresHoy: 0 }]));
+        const zonas = Object.fromEntries([...new Set(d.tiendas.map(t => t.zona))].map(z => [z, { modo: 'fuera' as ModoZona, margen: 0, supervisoresHoy: 0 }]));
         setS(base ? { ...VACIO, ...base.params, zonas: { ...zonas, ...(base.params.zonas || {}) } } : { ...VACIO, zonas });
       })
       .catch(e => setError(e instanceof Error ? e.message : 'No se pudo cargar el cotizador.'));
@@ -93,7 +99,8 @@ export function CotizadorModelos() {
   if (!datos.disponible || !datos.tiendas.length) return <div className="notice">Todavía no hay datos de clientes cargados para el cotizador.</div>;
 
   const t = r.total;
-  const zonasOrdenadas = [...r.zonas].sort((a, b) => Number(b.enModelo) - Number(a.enModelo) || b.valor - a.valor);
+  const peso = (m: ModoZona) => (m === 'modelo' ? 2 : m === 'guarda_analitica' ? 1 : 0);
+  const zonasOrdenadas = [...r.zonas].sort((a, b) => peso(b.modo) - peso(a.modo) || b.valor - a.valor);
   return <div className={`cm ${vistaCliente ? 'cm-vista-cliente' : ''}`}>
     <div className="cm-barra">
       <div><strong>Modelo híbrido · {datos.cliente}</strong><small>Datos al {datos.corte} · millones de pesos al mes, antes de IVA</small></div>
@@ -106,8 +113,13 @@ export function CotizadorModelos() {
     {aviso && <div className="notice">{aviso}</div>}
     <div className="cm-grilla">
       <aside>
-        <section className="cm-hoja"><h2>Ciudades en el modelo<small>Las que no entran conservan su guarda</small></h2>
-          {zonasOrdenadas.map(z => <label key={z.zona} className="cm-chk"><span><input type="checkbox" checked={s.zonas[z.zona]?.enModelo === true} onChange={e => zona(z.zona, { enModelo: e.target.checked })} /> {z.zona}</span><small>{z.tiendas} tiendas</small></label>)}
+        <section className="cm-hoja"><h2>Ciudades<small>Cómo entra cada una a la oferta</small></h2>
+          {zonasOrdenadas.map(z => <div key={z.zona} className="cm-zona">
+            <div className="cm-zona-nombre"><strong>{z.zona}</strong><small>{z.tiendas} tiendas</small></div>
+            <select aria-label={`Cómo entra ${z.zona}`} value={modoDeZona(s.zonas[z.zona])} onChange={e => zona(z.zona, { modo: e.target.value as ModoZona, enModelo: e.target.value === 'modelo' })}>
+              {MODOS.map(m => <option key={m.valor} value={m.valor}>{m.etiqueta}</option>)}
+            </select>
+          </div>)}
         </section>
         <section className="cm-hoja"><h2>Precios al cliente</h2>
           <label>Unidad de reacción (turno de 12 h)</label><Numero valor={s.precioUnidad} paso={0.5} sufijo="M al mes" onChange={n => cambiar({ precioUnidad: n })} />
@@ -140,15 +152,15 @@ export function CotizadorModelos() {
       <section>
         <div className="cm-kpis">
           <div className="cm-k"><small>El cliente paga hoy</small><b>${entero(t.valor)} M</b><span>guardas en tienda, al mes</span></div>
-          <div className="cm-k cm-dest"><small>Paga con el modelo</small><b>${entero(t.totalModelo)} M</b><span>{r.zonas.filter(z => z.enModelo).length} ciudades · {t.tiendas} tiendas</span></div>
+          <div className="cm-k cm-dest"><small>Paga con el modelo</small><b>${entero(t.totalModelo)} M</b><span>{r.zonas.filter(z => z.incluida).length} zonas · {t.tiendas} tiendas</span></div>
           <div className="cm-k"><small>Frente a hoy</small><b className={tono(t.frenteAHoy)}>{conSigno(t.frenteAHoy)} M</b><span>{pct(t.frenteAHoyPct)} · {conSigno(t.frenteAHoy * 12)} M al año</span></div>
           <div className="cm-k"><small>Guardas fijos</small><b>{entero(t.puestos)} → {entero(t.guardasModelo)}</b><span>hoy → con el modelo</span></div>
           <div className="cm-k"><small>Unidades de reacción</small><b>{entero(t.unidades)}</b><span>{entero(t.unidadesDia)} de día · {entero(t.unidadesNoche)} de noche</span></div>
         </div>
         <section className="cm-hoja"><h2>Hoy frente al modelo, por ciudad<small>Personal hoy = valor contratado de los puestos de guarda en tiendas</small></h2>
           <div className="cm-tabla"><table><thead><tr><th>Ciudad</th><th>Tiendas</th><th>Tiendas A / B / C</th><th>Guardas hoy → modelo</th><th>Unidades de reacción</th><th>Personal hoy</th><th>Personal modelo</th><th>Analítica</th><th>Total modelo</th><th>Frente a hoy</th></tr></thead>
-            <tbody>{zonasOrdenadas.map(z => <tr key={z.zona} className={z.enModelo ? '' : 'cm-fuera'}><td>{z.zona}</td><td>{z.tiendas}</td><td>{z.A} / {z.B} / {z.C}</td><td>{z.puestos} → {z.guardasModelo}</td><td>{z.unidades}</td><td>{entero(z.valor)}</td><td>{entero(z.personalModelo)}</td><td>{entero(z.valorAnalitica)}</td><td>{entero(z.totalModelo)}</td><td className={z.enModelo ? tono(z.frenteAHoy) : ''}>{z.enModelo ? conSigno(z.frenteAHoy) : 'sin cambio'}</td></tr>)}</tbody>
-            <tfoot><tr><td>Total en el modelo</td><td>{t.tiendas}</td><td>{t.A} / {t.B} / {t.C}</td><td>{t.puestos} → {t.guardasModelo}</td><td>{t.unidades}</td><td>{entero(t.valor)}</td><td>{entero(t.personalModelo)}</td><td>{entero(t.valorAnalitica)}</td><td>{entero(t.totalModelo)}</td><td className={tono(t.frenteAHoy)}>{conSigno(t.frenteAHoy)}</td></tr></tfoot>
+            <tbody>{zonasOrdenadas.map(z => <tr key={z.zona} className={z.incluida ? '' : 'cm-fuera'}><td>{z.zona}{z.modo === 'guarda_analitica' && <small className="cm-modo">conserva guarda</small>}</td><td>{z.tiendas}</td><td>{z.A} / {z.B} / {z.C}</td><td>{z.puestos} → {z.guardasModelo}</td><td>{z.unidades}</td><td>{entero(z.valor)}</td><td>{entero(z.personalModelo)}</td><td>{entero(z.valorAnalitica)}</td><td>{entero(z.totalModelo)}</td><td className={z.incluida ? tono(z.frenteAHoy) : ''}>{z.incluida ? conSigno(z.frenteAHoy) : 'sin cambio'}</td></tr>)}</tbody>
+            <tfoot><tr><td>Total de la oferta</td><td>{t.tiendas}</td><td>{t.A} / {t.B} / {t.C}</td><td>{t.puestos} → {t.guardasModelo}</td><td>{t.unidades}</td><td>{entero(t.valor)}</td><td>{entero(t.personalModelo)}</td><td>{entero(t.valorAnalitica)}</td><td>{entero(t.totalModelo)}</td><td className={tono(t.frenteAHoy)}>{conSigno(t.frenteAHoy)}</td></tr></tfoot>
           </table></div>
           {r.zonas.some(z => z.proporcionInvalida) && <div className="notice error">Hay una proporción en cero: cada nivel necesita al menos 1 tienda por unidad.</div>}
         </section>
